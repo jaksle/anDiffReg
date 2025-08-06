@@ -1,4 +1,4 @@
 # anDiffReg
-Regression methods for analysing TA-MSD described in the paper XXX. Functions are implemented in Julia, Python and Matlab.
+Regression methods for analysing TA-MSD described in the paper XXX in Julia and Python. Julia version is the basis, Python is a translation.
 
-All the necessary functions are shared in `anDiffReg` files. Examples of use are in `exampleUse` scripts.
+All the necessary functions are in `anDiffReg` .jl or .py files. Examples of use are in `exampleUse` scripts.
