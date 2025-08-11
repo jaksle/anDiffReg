@@ -63,7 +63,7 @@ function fit_gls(tamsd::AbstractMatrix, dim::Integer, Δt::Real, init_α::Abstra
      precompute::Bool = true,
      precompute_alphas::AbstractVector = 0.1:0.02:1.6
      )
-    ln, n = size(tamsd)[1]+1, size(tamsd)[2] # ! ln is of orignal trajectory
+    ln, n = size(tamsd)[1]+1, size(tamsd)[2] # ln is of orignal trajectory (!)
     ts = Δt*(1:ln)
     Ts = [ones(ln-1) log10.(ts[1:ln-1])]
     gls = Matrix{Float64}(undef, 2, n)
@@ -189,7 +189,7 @@ function incrCov(ts,i,j,k,l,K)
 end
 
 """
-    Covariance betweeen points ts[k] and ts[l] of TA-MSD calculated from trajectory with covariance function K = K(s,t).
+Covariance betweeen points ts[k] and ts[l] of TA-MSD calculated from trajectory with covariance function K = K(s,t).
 """ 
 function theorCovEff(ts,k,l,ln,K)
     if k > l
@@ -198,15 +198,33 @@ function theorCovEff(ts,k,l,ln,K)
     N1 = h -> ln-l-h+1
     N2 = h -> (h <= l-k+1) ? ( ln-l ) : ( ln-k-h+1 )
 
-    return 2/((ln-k)*(ln-l)) *( sum(N1(h)*incrCov(ts,1,h,k,l,K)^2 for h in 2:ln-l; init=0) + sum( N2(h)*incrCov(ts,h,1,k,l,K)^2 for h in 1:ln-k ) )
+    return 2/((ln-k)*(ln-l)) * ( 
+          sum(N1(h)*incrCov(ts,1,h,k,l,K)^2 for h in 2:ln-l; init=0) 
+        + sum( N2(h)*incrCov(ts,h,1,k,l,K)^2 for h in 1:ln-k ) )
 end
 
+"""
+Specialised TA-MSD covariance for FBM
+"""
+function theorCovEffFBM(ts,k,l,ln,α) 
+    K(s,t) = (α ≈ 1.0) ? 2min(s,t) : (s^α + t^α - abs(s-t)^α) 
+    k, l = minmax(k, l)
+
+    S1 = 0.
+    @simd for h in 2:ln-l
+        S1 += (ln-l-h+1) * incrCov(ts,1,h,k,l,K)^2
+    end
+    S2 = 0.
+    @simd for h in 1:ln-k 
+        S2 += ((h <= l-k+1) ? ( ln-l ) : ( ln-k-h+1 )) * incrCov(ts,h,1,k,l,K)^2
+    end
+    return  2/((ln-k)*(ln-l)) * (S1 + S2)
+end
 
 """
 Covariance matrix of errors of TA-MSD and log TA-MSD. Data is assumed to come from FBM.
 """
-function errCov(ts::AbstractVector{T}, dim::Integer, α::Real,  logBase::Integer = 10) where T<:Real
-    K(s,t) = (α ≈ 1.0) ? 2min(s,t) : (s^α + t^α - abs(s-t)^α) # 1D FBM cov
+function errCov(ts::AbstractVector, dim::Integer, α::Real,  logBase::Integer = 10)
 
     ln = length(ts)
     S = float(T)
@@ -214,37 +232,38 @@ function errCov(ts::AbstractVector{T}, dim::Integer, α::Real,  logBase::Integer
     logErrCov = Matrix{S}(undef, ln-1, ln-1)
 
     for i in 1:ln-1, j in i:ln-1
-        c = theorCovEff(ts,i,j,ln,K)
+        c = theorCovEffFBM(ts,i,j,ln,α)
         errCov[i,j] = dim*c
-        logErrCov[i,j] = c / ( dim * K(ts[i],ts[i]) * K(ts[j],ts[j]) * log(logBase)^2 ) 
+        logErrCov[i,j] = c / ( dim * 2ts[i]^α * 2ts[j]^α * log(logBase)^2 ) 
     end
 
     return Symmetric(errCov), Symmetric(logErrCov)
 end
 
-function crossCov(ts::AbstractVector{T}, dim::Integer, α::Real) where T <: Real
-        K(s,t) = (α ≈ 1.0) ? 2min(s,t) : (s^α + t^α - abs(s-t)^α) # FBM cov
+function crossCov(ts::AbstractVector, dim::Integer, α::Real)
 
-        function crossCovEff(ts, k, l, ln, K)
-            if k > l
-                k, l = l, k
-            end
-            N1 = h -> ln-l-h+1
-            N2 = h -> (h <= l-k+1) ? ( ln-l ) : ( ln-k-h+1 )
+    function crossCovEffFBM(ts, k, l, ln, α)
+        K(s,t) = (α ≈ 1.0) ? 2min(s,t) : (s^α + t^α - abs(s-t)^α) 
+        k, l = minmax(k, l)
 
-            return 4/((ln-k)*(ln-l)) * ( 
-                  sum(N1(h)*incrCov(ts,1,h,k,l,K)*(==(1,h) + ==(1+k,h+l) - ==(1,h+l) - ==(1+k,h)) for h in 2:ln-l; init=0) 
-                + sum( N2(h)*incrCov(ts,h,1,k,l,K)*(==(h,1) + ==(h+k,1+l) - ==(h,1+l) - ==(h+k,1)) for h in 1:ln-k )
-                )
+        S1 = 0.
+        @simd for h in 2:ln-l
+            S1 += (ln-l-h+1) * incrCov(ts,1,h,k,l,K)*(==(1,h) + ==(1+k,h+l) - ==(1,h+l) - ==(1+k,h))
         end
-
-        ln = length(ts)
-        cov = Matrix{float(T)}(undef, ln-1, ln-1)
-        for i in 1:ln-1, j in i:ln-1
-            cov[i,j] = dim*crossCovEff(ts,i,j,ln,K)
+        S2 = 0.
+        @simd for h in 1:ln-k 
+            S2 += ((h <= l-k+1) ? ( ln-l ) : ( ln-k-h+1 )) * incrCov(ts,h,1,k,l,K)*(==(h,1) + ==(h+k,1+l) - ==(h,1+l) - ==(h+k,1))
         end
+        return  4/((ln-k)*(ln-l)) * (S1 + S2)
+    end
 
-        return Symmetric(cov)
+    ln = length(ts)
+    cov = Matrix{float(T)}(undef, ln-1, ln-1)
+    for i in 1:ln-1, j in i:ln-1
+        cov[i,j] = dim*crossCovEffFBM(ts,i,j,ln,α)
+    end
+
+    return Symmetric(cov)
 end
 
 """
