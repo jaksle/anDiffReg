@@ -227,7 +227,7 @@ Covariance matrix of errors of TA-MSD and log TA-MSD. Data is assumed to come fr
 function errCov(ts::AbstractVector, dim::Integer, α::Real,  logBase::Integer = 10)
 
     ln = length(ts)
-    S = float(T)
+    S = float(eltype(ts))
     errCov = Matrix{S}(undef, ln-1, ln-1)
     logErrCov = Matrix{S}(undef, ln-1, ln-1)
 
@@ -258,7 +258,8 @@ function crossCov(ts::AbstractVector, dim::Integer, α::Real)
     end
 
     ln = length(ts)
-    cov = Matrix{float(T)}(undef, ln-1, ln-1)
+    S = float(eltype(ts))
+    cov = Matrix{S}(undef, ln-1, ln-1)
     for i in 1:ln-1, j in i:ln-1
         cov[i,j] = dim*crossCovEffFBM(ts,i,j,ln,α)
     end

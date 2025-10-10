@@ -1,6 +1,8 @@
 
 using Statistics, LinearAlgebra
 
+include("anDiffReg.jl")
+
 ## exemplary data: simulated fractional Brownian motion
 
 H, D = 0.4, 1 # FBM parameters: Hurst index H and diffusivity D
@@ -18,6 +20,12 @@ X = A'*ξ
 ξ = randn(length(ts), n)
 Y = A'*ξ
 
+## alternatively, load data from the file
+
+using CSV
+
+XY = CSV.read("exemplaryData/2D FBM.csv",  CSV.Tables.matrix)
+X, Y = XY[:,1:2:end], XY[:,2:2:end]
 
 ## TA-MSD analysis
 
