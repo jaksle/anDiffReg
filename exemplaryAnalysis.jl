@@ -27,6 +27,11 @@ using CSV
 XY = CSV.read("exemplaryData/2D FBM.csv",  CSV.Tables.matrix)
 X, Y = XY[:,1:2:end], XY[:,2:2:end]
 
+ln, n = size(X)
+dt = 1.
+ts = dt*(1:ln)
+H, D = 0.4, 1
+
 ## TA-MSD analysis
 
 msd = tamsd([X ;;; Y]) # TA-MSD of 2D traj
