@@ -3,6 +3,7 @@ using Statistics, LinearAlgebra
 
 include("anDiffReg.jl")
 
+#---------------------------------------------------------------
 ## exemplary data: generate simulated fractional Brownian motion
 
 H, D = 0.4, 1 # FBM parameters: Hurst index H and diffusivity D
@@ -20,6 +21,7 @@ X = A'*ξ
 ξ = randn(length(ts), n)
 Y = A'*ξ
 
+#---------------------------------------------------------------
 ## alternatively, load data from the file
 
 using CSV
@@ -30,8 +32,9 @@ X, Y = XY[:,1:2:end], XY[:,2:2:end]
 ln, n = size(X)
 dt = 1.
 ts = dt*(1:ln)
-H= 0.4 # used only optionally for initial estimate
+H = 0.4 # used only optionally for initial estimate
 
+#---------------------------------------------------------------
 ## TA-MSD analysis
 
 msd = tamsd([X ;;; Y]) # TA-MSD of 2D traj
@@ -51,7 +54,7 @@ cov(gls')
 glsP, covGLSP = fit_gls(msd[:,1:100], 2, dt, fill(2H, n), precompute = false)
 # covariance computed for each trajectory, could be slow if there are many
 
-
+#---------------------------------------------------------------
 ## trajectories with noise
 
 D, σ = 5, 1
