@@ -3,7 +3,7 @@ using Statistics, LinearAlgebra
 
 include("anDiffReg.jl")
 
-## exemplary data: simulated fractional Brownian motion
+## exemplary data: generate simulated fractional Brownian motion
 
 H, D = 0.4, 1 # FBM parameters: Hurst index H and diffusivity D
 n = 10^4 # number of trajectories
