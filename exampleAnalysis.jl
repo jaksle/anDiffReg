@@ -51,4 +51,5 @@ gls2, covGLS2 = fit_gls(msd2, 1, dt, fill(2H, n), fill(D, n), σ)
 # initial estimates of α, D and σ must be used 
 
 mean(gls2, dims=2)
+
 cov(gls2')
