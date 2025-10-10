@@ -30,7 +30,7 @@ X, Y = XY[:,1:2:end], XY[:,2:2:end]
 ln, n = size(X)
 dt = 1.
 ts = dt*(1:ln)
-H, D = 0.4, 1
+H= 0.4 # used only optionally for initial estimate
 
 ## TA-MSD analysis
 
