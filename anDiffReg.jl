@@ -1,4 +1,8 @@
+module AnDiffReg
+
 using Statistics, LinearAlgebra, ProgressMeter
+
+export tamsd, fit_ols, fit_gls
 
 """
     TA-MSD of trajectories. Time should go along first axis, subsequent trajectories along second axis, x, y, z coordinates along third axis.
@@ -282,4 +286,4 @@ function noiseCov(ln,k,l)
 end
 
 
-
+end

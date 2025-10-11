@@ -1,7 +1,8 @@
 
 using Statistics, LinearAlgebra
 
-include("anDiffReg.jl")
+include("AnDiffReg.jl")
+using .AnDiffReg
 
 #---------------------------------------------------------------
 ## exemplary data: generate simulated fractional Brownian motion
