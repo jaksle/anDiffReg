@@ -25,6 +25,15 @@ function tamsd(X::AbstractMatrix{T}) where {T <: Real}
     return msd
 end
 
+function tamsd(X::AbstractVector{T}) where {T <: Real}
+    ln =  length(X)
+    msd = Vector{T}(undef, ln-1)
+    for i in 1:ln-1
+        msd[i] = mean((X[k,j] - X[k+i,j])^2 for k in 1:ln-i)
+    end
+    return msd
+end
+
 """
     fit_ols(tamsd::AbstractMatrix, dim::Integer, Δt::Real, w::Integer)
 
