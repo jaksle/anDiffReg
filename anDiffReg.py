@@ -213,7 +213,7 @@ def theorCovEff(ts, k, l, ln, alpha):
 @njit
 def errCov(ts, dim, alpha, w=None, logBase=10):
     """
-    Covariance matrix of errors of TA-MSD and log TA-MSD. Data is assumed to come from FBM. Labels ts correspond to the original trajectory.
+    Covariance matrix of errors of TA-MSD and log TA-MSD. Data is assumed to come from FBM, D = 1. Labels ts correspond to the original trajectory.
     """
     K = lambda s, t: 2 * np.minimum(s, t) if np.abs(alpha - 1.0) < 1e-8 else (s**alpha + t**alpha - np.abs(s - t)**alpha)
     

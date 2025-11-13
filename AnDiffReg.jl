@@ -1,6 +1,6 @@
 module AnDiffReg
 
-using Statistics, LinearAlgebra, ProgressMeter
+using Statistics, LinearAlgebra, ProgressMeter, FFTW
 
 export tamsd, fit_ols, fit_gls, deconvolve_ols, deconvolve_gls
 
@@ -207,6 +207,145 @@ function fit_gls(tamsd::AbstractMatrix, dim::Integer, Δt::Real, init_α::Abstra
 end
 
 
+## deconvolution 
+
+"""
+    Performs Richardson-Lucy deconvolution with Gaussian kernel given covariance C.
+"""
+function deconvolve_internal(logDs, αs, den, C, nIter)
+    res = copy(den)
+    nn = MvNormal([logDs[end÷2], αs[end÷2]], Symmetric(C))
+    ns = [pdf(nn,[x,y]) for x in logDs, y in αs]
+    ns = circshift(ns, (length(logDs)÷2, length(αs)÷2))
+    ins = reverse(ns)
+
+    for _ in 1:nIter
+        d = real.(ifft( fft(res) .* fft(ns)))
+        d[abs.(d) .< 10^-12] .= 10^-12
+        res .*= real.(ifft( fft(den ./ d) .* fft(ins)))
+    end
+    return res
+end
+
+
+"""
+    deconvolve_gls(logDs::AbstractVector, αs::AbstractVector, den::AbstractMatrix, Δt::Real, ln::Integer, dim::Integer, α::Real, nIter::Integer = 30) 
+    deconvolve_gls(logDs::AbstractVector, αs::AbstractVector, den::AbstractMatrix, Δt::Real, ln::Integer, dim::Integer, (α_min,α_max)::Tuple{<:Real,<:Real}, nIter::Integer = 30)
+
+Deconvolving pdf of estimated (logD, α) obtained with the GLS method. It removes the blur caused by the estimation errors, reconstructing the original distribution of (logD, α). This method assumes the data was FBM.
+Input:
+- logDs: labels of logD
+- αs: labels of α
+- den: density which we want to deconvolve
+- Δt: sampling inverval
+- ln: length of the orignal trajectory used
+- dim: trajectory dimension (typically 1, 2 or 3)
+For simple deconvolution provide:
+- α: the value for which deconvolve, should be the most typical in the sample
+For full deconvolution provide:
+- (α_min,α_max): range of α for which deconvolve
+Full deconvolution is much more computationally expensive, but the result better reflects the original distribution.
+
+Optional input:
+- nIter: number of steps in the Richardson-Lucy deconvolution algorithm
+
+Output: matrix with the deconvolved pdf. 
+"""
+function deconvolve_gls(logDs::AbstractVector, αs::AbstractVector, den::AbstractMatrix, Δt::Real, ln::Integer, dim::Integer, α::Real, nIter::Integer = 30) 
+    ts = Δt * (1:ln) 
+    Ts = [ones(ln-1) log10.(ts[1:end-1])]
+    _, Σ = AnDiffReg.errCov(ts, dim, α)
+
+    return deconvolve_internal(logDs, αs, den, (Ts'*Σ^-1*Ts)^-1, nIter)
+end
+
+
+
+"""
+    deconvolve_ols(logDs::AbstractVector, αs::AbstractVector, den::AbstractMatrix, Δt::Real, ln::Integer, dim::Integer, α::Real, w::Integer, nIter::Integer = 30)
+    deconvolve_ols(logDs::AbstractVector, αs::AbstractVector, den::AbstractMatrix, Δt::Real, ln::Integer, dim::Integer, (α_min,α_max)::Tuple{<:Real,<:Real}, w::Integer, nIter::Integer = 30)
+
+Deconvolving pdf of estimated (logD, α) obtained with the OLS method. It removes the blur caused by the estimation errors, reconstructing the original distribution of (logD, α). This method assumes the data was FBM.
+Input:
+- logDs: labels of logD
+- αs: labels of α
+- den: density which we want to deconvolve
+- Δt: sampling inverval
+- ln: length of the orignal trajectory used
+- dim: trajectory dimension (typically 1, 2 or 3)
+- w: size of window in which the OLS was calculated 
+For simple deconvolution provide:
+- α: the value for which deconvolve, should be the most typical in the sample
+For full deconvolution provide:
+- (α_min,α_max): range of α for which deconvolve
+Full deconvolution is much more computationally expensive, but the result better reflects the original distribution.
+
+Optional input:
+- nIter: number of steps in the Richardson-Lucy deconvolution algorithm
+
+Output: matrix with the deconvolved pdf. 
+"""
+function deconvolve_ols(logDs::AbstractVector, αs::AbstractVector, den::AbstractMatrix, Δt::Real, ln::Integer, dim::Integer, α::Real, w::Integer, nIter::Integer = 30)
+    ts = Δt * (1:ln) 
+    Ts = [ones(w) log10.(ts[1:w])]
+    S = (Ts'*Ts)^-1 * Ts'
+    _, Σ = AnDiffReg.errCov(ts, dim, α, w)
+
+    return deconvolve_internal(logDs, αs, den, S*Σ*S', nIter)
+end
+
+function deconvolve_gls(logDs::AbstractVector, αs::AbstractVector, den::AbstractMatrix, Δt::Real, ln::Integer, dim::Integer, (α_min,α_max)::Tuple{<:Real,<:Real}, nIter::Integer = 30)
+    ts = Δt * (1:ln) 
+    _, Σ = AnDiffReg.errCov(ts, dim, α_min)
+    Ts = [ones(ln-1) log10.(ts[1:end-1])]
+    res = deconvolve_internal(logDs, αs, den, (Ts'*Σ^-1*Ts)^-1, nIter)
+
+    j1 = findfirst(αs .> α_min)
+    j2 = findlast(αs .< α_max)
+
+    @showprogress for k in j1+1:j2-1
+        _, Σ = AnDiffReg.errCov(ts, 1, αs[k] )
+        zs = deconvolve_internal(logDs, αs, den, (Ts'*Σ^-1*Ts)^-1, nIter)
+        res[:,k] .= zs[:,k]
+    end
+
+    _, Σ = AnDiffReg.errCov(ts, 1, α_max )
+    zs = deconvolve_internal(logDs, αs, den, (Ts'*Σ^-1*Ts)^-1, nIter)
+
+    res[:,j2:end] .= zs[:,j2:end]
+
+    res ./= (sum(res)*step(αs)*step(logDs))
+    return res
+end
+
+
+function deconvolve_ols(logDs::AbstractVector, αs::AbstractVector, den::AbstractMatrix, Δt::Real, ln::Integer, dim::Integer, (α_min,α_max)::Tuple{<:Real,<:Real}, w::Integer, nIter::Integer = 30)
+    ts = Δt * (1:ln) 
+    _, Σ = AnDiffReg.errCov(ts, dim, α_min, w)
+    Ts = [ones(w) log10.(ts[1:w])]
+    S = (Ts'*Ts)^-1 * Ts'
+    res = deconvolve_internal(logDs, αs, den, S*Σ*S', nIter)
+
+    j1 = findfirst(αs .> α_min)
+    j2 = findlast(αs .< α_max)
+
+    @showprogress for k in j1+1:j2-1
+        _, Σ = AnDiffReg.errCov(ts, 1, αs[k], w)
+        zs = deconvolve_internal(logDs, αs, den, S*Σ*S', nIter)
+        res[:,k] .= zs[:,k]
+    end
+
+    _, Σ = AnDiffReg.errCov(ts, 1, α_max, w)
+    zs = deconvolve_internal(logDs, αs, den, S*Σ*S', nIter)
+
+    res[:,j2:end] .= zs[:,j2:end]
+
+    res ./= (sum(res)*step(αs)*step(logDs))
+    return res
+end
+
+
+
 ## utility functions
 
 function incrCov(ts,i,j,k,l,K) 
@@ -230,7 +369,7 @@ function theorCovEff(ts,k,l,ln,K)
 end
 
 """
-Specialised TA-MSD covariance for FBM
+Specialised TA-MSD covariance for FBM.
 """
 function theorCovEffFBM(ts,k,l,ln,α) 
     K(s,t) = (α ≈ 1.0) ? 2min(s,t) : (s^α + t^α - abs(s-t)^α) 
@@ -248,7 +387,7 @@ function theorCovEffFBM(ts,k,l,ln,α)
 end
 
 """
-Covariance matrix of errors of TA-MSD and log TA-MSD. Data is assumed to come from FBM. Labels ts correspond to the original trajectory.
+Covariance matrix of errors of TA-MSD and log TA-MSD. Data is assumed to come from FBM, D = 1. Labels ts correspond to the original trajectory.
 """
 function errCov(ts::AbstractVector, dim::Integer, α::Real, w::Integer = length(ts)-1,  logBase::Integer = 10)
 

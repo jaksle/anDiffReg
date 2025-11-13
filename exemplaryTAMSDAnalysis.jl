@@ -36,19 +36,43 @@ ts = dt*(1:ln)
 α_init = 0.8 # used only optionally for initial estimate
 
 ##---------------------------------------------------------------
-# TA-MSD analysis
+# calculating TA-MSD
 
 msd = tamsd([X ;;; Y]) # TA-MSD of 2D traj
 
+# TA-MSD plot with pointwise 95% error bars
+using CairoMakie
+
+k = 42 # choose TA-MSD to plot
+w = 50 # plot window size
+err, logErr = AnDiffReg.errCov(ts, 2, α)
+fig = Figure()
+ax = Axis(fig[1,1],
+    xlabel = "time",
+    ylabel = "TA-MSD",
+    limits = (0,w,0,nothing)
+)
+
+qs = [quantile(Normal(0,sqrt(D)*s), 0.975) for s in sqrt.(diag(err))]
+scatter!(ax,ts[1:w], msd[1:w,k],
+    label = "TA-MSD with 95% pointwise error bars",
+)
+errorbars!(ax,ts[1:w], msd[1:w,k], qs[1:w],
+    color = :black,
+)
+axislegend(merge=true)
+fig
+
+##---------------------------------------------------------------
+# parameter estimates
 ols, covOLS = fit_ols(msd, 2, dt)
 
-# mean and variance of the OLS estimates
 
 mean(ols, dims=2) # average estimates
 cov(ols') # covariance of the estimates, compare with predicted covOLS
 
 
-# here init α is true 2H, ols estimate also can be used
+# here init α is the true value from the simulation, ols estimate also can be used
 gls, covGLS = fit_gls(msd, 2, dt, fill(α_init, n)) 
 
 
