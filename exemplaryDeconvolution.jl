@@ -1,6 +1,8 @@
-#using CairoMakie, ProgressMeter, LaTeXStrings
+
 using Statistics, Distributions, LinearAlgebra
 using KernelDensity, FFTW
+
+using CairoMakie, ProgressMeter
 
 include("AnDiffReg.jl")
 using .AnDiffReg
@@ -30,62 +32,168 @@ for k in 1:n
     msd[:,k] .= tamsd(X) 
 end
 
+## fitting
 
-## GLS prep
+ols = fit_ols(msd, 1, dt)
+gls, covGLS = fit_gls(msd, 1, dt, ols[2,:]) 
 
-hs = 0.05:0.01:0.8
-errC = Array{Float64}(undef,ln-1,ln-1,length(hs))
-bias = Array{Float64}(undef,ln-1,length(hs))
 
-@showprogress for k in eachindex(hs) # uwaga 1D czy 2D!
-    f = (s,t) -> 1*(t^(2hs[k])+s^(2hs[k])-abs(s-t)^(2hs[k])) # no ln(10)
-    errC[:,:,k] .= [theorCovEff(i,j,ln,f)/(f(ts[i],ts[i])*f(ts[j],ts[j])) * 1/(log(10)^2) for i in 1:ln-1, j in 1:ln-1]
+
+## getting kde
+
+den = kde((gls[1,:],gls[2,:]),boundary = ((-1.5,1.5),(0.2,1.3)),npoints=(512,512))
+
+# plotting initial estimate
+xlab = L"$D$ [L$^2$/T$^\alpha$]"
+ylab = L"{\alpha}\ [1]"
+xtickL = [L"10^{-1}",L"10^{-0.5}","1",L"10^{0.5}",L"10^{1}"]
+xtick = (-1:0.5:1,xtickL)
+fig = Figure()
+ax = Axis(fig[1,1],
+    yticks = 0.2:0.2:1.4,
+    xticks = xtick,
+    limits = (-1.2,1.2,0.2,1.2),
+    xlabel = xlab,
+    ylabel = ylab,
+    title = "Initial pdf estimate"
+)
+heatmap!(ax,den.x,den.y,den.density)
+fig
+
+
+## simple deconvolution
+
+function deconvolve_gls(logDs::AbstractVector, αs::AbstractVector, den::AbstractMatrix, ts::AbstractVector, dim::Integer, α::Real, nIter::Integer = 30)  
+    Ts = [ones(ln-1) log10.(ts[1:end-1])]
+    _, Σ = AnDiffReg.errCov(ts, dim, α)
+
+    return deconvolve_internal(logDs, αs, den, (Ts'*Σ^-1*Ts)^-1, nInter)
 end
 
-for k in eachindex(hs)
-    bias[:,k] .=  -log(10) .* diag(errC[:,:,k]) ./2 # 1 D
+function deconvolve_ols(logDs::AbstractVector, αs::AbstractVector, den::AbstractMatrix, ts::AbstractVector, dim::Integer, α::Real, w::Integer, nIter::Integer = 30)
+    Ts = [ones(ln-1) log10.(ts[1:end-1])]
+    S = (Ts'*Ts)^-1 * Ts'
+    _, Σ = AnDiffReg.errCov(ts, dim, α, w)
+
+    return deconvolve_internal(logDs, αs, den, S*Σ*S', nInter)
 end
 
 
-## msd fit
-
-lmsd = log10.(msd)
+deconvolvedPDF = deconvolve_gls(den.x, den.y, den.density, ts, 1, 0.7)
 
 
-l = 10 # window
+fig = Figure() # plot
+ax = Axis(fig[1,1],
+    yticks = 0.2:0.2:1.4,
+    xticks = xtick,
+    limits = (-1.2,1.2,0.2,1.2),
+    xlabel = xlab,
+    ylabel = ylab,
+    title = "Deconvolved pdf estimate"
+)
+heatmap!(ax, den.x, den.y, deconvolvedPDF)
+fig
 
-B = Matrix{Float64}(undef, 2, n)
-for i in 1:n
-    B[:,i] .= (Ts[1:l,:]'*Ts[1:l,:])^-1*Ts[1:l,:]'*lmsd[1:l,i]
+
+denMarg = vec(sum(res,dims=1))
+denMarg .*= 1/(sum(denMarg3)*step(den.y))
+lines(den.y,denMarg3)
+
+## full deconvolution 
+
+function deconvolve_internal(logDs, αs, den, C, nIter)
+    res = copy(den)
+    nn = MvNormal([logDs[end÷2], αs[end÷2]], Symmetric(C))
+    ns = [pdf(nn,[x,y]) for x in logDs, y in αs]
+    ns = circshift(ns, (length(logDs)÷2, length(αs)÷2))
+    ins = reverse(ns)
+    res = copy(den)
+
+    for _ in 1:nIter
+        d = real.(ifft( fft(res) .* fft(ns)))
+        d[abs.(d) .< 10^-12] .= 10^-12
+        res .*= real.(ifft( fft(zs ./ d) .* fft(ins)))
+    end
+    return res
 end
 
-B[1,:] .-= log10(4)
 
+function deconvolve_gls(logDs::AbstractVector, αs::AbstractVector, den::AbstractMatrix, ts::AbstractVector, dim::Integer, (α_min,α_max)::Tuple{<:Real,<:Real}, nIter::Integer = 30)
+    _, Σ = AnDiffReg.errCov(ts, dim, α_min)
+    Ts = [ones(ln-1) log10.(ts[1:end-1])]
+    res = deconvolve_internal(logDs, αs, den, (Ts'*Σ^-1*Ts)^-1, nInter)
 
-# GLS fit
-w = 99 # window
-bB = Matrix{Float64}(undef, 2, n)
+    j1 = findfirst(αs .> α_min)
+    j2 = findlast(αs .< α_max)
 
-for i in 1:n
-    j = findfirst(hs .>= B[2,i]/2) # H not α
-    j === nothing && (j = length(hs))
-    #jmin, jmax = findfirst(hs .>= 0.2), findfirst(hs .>= 0.5)
-    #j = max(j,jmin); j = min(j,jmax)
-    gR = (Ts[1:w,:]'*errC[1:w,1:w,j]^-1*Ts[1:w,:])^-1*Ts[1:w,:]'*errC[1:w,1:w,j]^-1
-    #gB[:,i] .= gR*lmsd[1:w,i]
-    bB[:,i] .= gR*(lmsd[1:w,i] .- bias[1:w,j])
+    @showprogress for k in j1+1:j2-1
+        _, Σ = AnDiffReg.errCov(ts, 1, αs[k] )
+        zs = deconvolve_internal(logDs, αs, den, (Ts'*Σ^-1*Ts)^-1, nInter)
+        res[:,k] .= zs[:,k]
+    end
+
+    _, Σ = AnDiffReg.errCov(ts, 1, α_max )
+    zs = deconvolve_internal(logDs, αs, den, (Ts'*Σ^-1*Ts)^-1, nInter)
+
+    res[:,j2:end] .= zs[:,j2:end]
+
+    res ./= (sum(res)*step(αs)*step(logDs))
+    return res
 end
 
-bB[1,:] .-= log10(2)
+
+function deconvolve_ols(logDs::AbstractVector, αs::AbstractVector, den::AbstractMatrix, ts::AbstractVector, dim::Integer, (α_min,α_max)::Tuple{<:Real,<:Real}, w::Integer, nIter::Integer = 30)
+    _, Σ = AnDiffReg.errCov(ts, dim, α_min, w)
+    Ts = [ones(ln-1) log10.(ts[1:w])]
+    S = (Ts'*Ts)^-1 * Ts'
+    res = deconvolve_internal(logDs, αs, den, S*Σ*S', nInter)
+
+    j1 = findfirst(αs .> α_min)
+    j2 = findlast(αs .< α_max)
+
+    @showprogress for k in j1+1:j2-1
+        _, Σ = AnDiffReg.errCov(ts, 1, αs[k], w)
+        zs = deconvolve_internal(logDs, αs, den, S*Σ*S', nInter)
+        res[:,k] .= zs[:,k]
+    end
+
+    _, Σ = AnDiffReg.errCov(ts, 1, α_max, w)
+    zs = deconvolve_internal(logDs, αs, den, S*Σ*S', nInter)
+
+    res[:,j2:end] .= zs[:,j2:end]
+
+    res ./= (sum(res)*step(αs)*step(logDs))
+    return res
+end
 
 
-## simple deconv
-nIter = 30
+resI = copy(den.density)
+nIter = 100
+j1 = findfirst(den.y .> 0.2)
+j2 = findlast(den.y .< 1.2)
 
-den = kde((bB[1,:],bB[2,:]),boundary = ((-1.5,1.5),(0.2,1.3)),npoints=(512,512))
-heatmap(den.x,den.y,den.density')
 
-surface(den.x,den.y,den.density')
+
+
+fig = Figure()
+ax = Axis(fig[1,1],
+    yticks = 0.2:0.2:1.4,
+    xticks = xtick,
+    limits = (-1.2,1.2,0.2,1.2),
+    xlabel = xlab,
+    ylabel = ylab,
+    title = "Deconvolved pdf estimate"
+)
+heatmap!(ax,den.x,den.y,den.density)
+fig
+
+
+
+
+
+
+
+###############
 
 D = 1 # mean(bB[1,:])
 mA = 0.7 #mean(bB[2,:])
@@ -138,32 +246,6 @@ end
 
 #heatmap(den.x,den.y,res')
 
-
-resI = copy(res)
-j = findfirst(den.y .> 0.2)
-j2 = findlast(den.y .< 1.2)
-@showprogress for k in j:j2
-    mA = den.y[k] 
-    K = (s,t) -> 1*(t^(mA)+s^(mA)-abs(s-t)^(mA))
-    Σ = [theorCovEff(i,i2,ln,K)/(K(ts[i],ts[i])*K(ts[i2],ts[i2]))* 1/(log(10)^2) for i in 1:ln-1,i2 in 1:ln-1]
-    eM = (Ts'*Σ^-1*Ts)^-1
-    nn= MvNormal([den.x[end÷2], den.y[end÷2]], Symmetric(eM))
-
-    ns = [pdf(nn,[x,y]) for x in den.x, y in den.y]
-    ns = circshift(ns,(length(den.x)÷2,length(den.y)÷2))
-    #heatmap(den.x,den.y,ns')
-
-    #dec = deconv(den.density,ns,-1)
-    zs = den.density
-    ins = reverse(ns)
-    res = copy(zs)
-    for _ in 1:nIter
-        d = real.(ifft( fft(res) .* fft(ns)))
-        d[abs.(d) .< 10^-12] .= 10^-12
-        res .*= real.(ifft( fft(zs ./ d) .* fft(ins)))
-    end
-    resI[:,k] .= res[:,k]
-end
 
 mA = 1.2 #mean(bB[2,:])
 K = (s,t) -> 1*(t^(mA)+s^(mA)-abs(s-t)^(mA))

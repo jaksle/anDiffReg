@@ -33,28 +33,30 @@ X, Y = XY[:,1:2:end], XY[:,2:2:end]
 ln, n = size(X)
 dt = 1.
 ts = dt*(1:ln)
-α = 0.8 # used only optionally for initial estimate
+α_init = 0.8 # used only optionally for initial estimate
 
 ##---------------------------------------------------------------
 # TA-MSD analysis
 
 msd = tamsd([X ;;; Y]) # TA-MSD of 2D traj
 
-ols = fit_ols(msd, 2, dt)
+ols, covOLS = fit_ols(msd, 2, dt)
 
 # mean and variance of the OLS estimates
-mean(ols, dims=2)
-cov(ols')
+
+mean(ols, dims=2) # average estimates
+cov(ols') # covariance of the estimates, compare with predicted covOLS
+
 
 # here init α is true 2H, ols estimate also can be used
-gls, covGLS = fit_gls(msd, 2, dt, fill(α, n)) 
+gls, covGLS = fit_gls(msd, 2, dt, fill(α_init, n)) 
 
 
-mean(gls, dims=2)
-cov(gls')
+mean(gls, dims=2) 
+cov(gls') 
 
 # covariance is computed for each trajectory, could be slow if there are many
-glsP, covGLSP = fit_gls(msd[:,1:100], 2, dt, fill(α, n), precompute = false)
+glsP, covGLSP = fit_gls(msd[:,1:100], 2, dt, fill(α_init, n), precompute = false)
 
 
 ##---------------------------------------------------------------

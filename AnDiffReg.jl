@@ -2,7 +2,7 @@ module AnDiffReg
 
 using Statistics, LinearAlgebra, ProgressMeter
 
-export tamsd, fit_ols, fit_gls
+export tamsd, fit_ols, fit_gls, deconvolve_ols, deconvolve_gls
 
 """
     TA-MSD of trajectories. Time should go along first axis, subsequent trajectories along second axis, x, y, z coordinates along third axis.
@@ -39,16 +39,29 @@ end
 
 Fitting TA-MSD with the OLS method.
 Input:
-- tamsd: ln-1×n  matrix containing the entire TA-MSDs of the n length ln sample trajectories
+- tamsd: (ln-1)×n  matrix containing the entire TA-MSDs of the n length ln sample trajectories
 - dim: original trajectory dimension (usually 1, 2 or 3)
 - Δt: sampling interval
-- w = max(5,size(tamsd)[1]÷10): integer fitting width size
+- w = max(5,size(tamsd)[1]÷10): window size
+Output:
+- ols: 2×n matrix values of (log10 D, α) estimates
+- fitCov: 2×2×n matrix with estimated parameter error covariances 
 """
 function fit_ols(tamsd::AbstractMatrix, dim::Integer, Δt::Real, w::Integer = max(5,size(tamsd)[1]÷10))
-    Ts = [ones(w) log10.(Δt*(1:w))]
-    estPar = (Ts'*Ts)^-1*Ts' * log10.(tamsd[1:w,:])
-    estPar[1,:] .-= log10(2dim)
-    return estPar
+    ln, n = size(tamsd)
+    ts = Δt*(1:ln)
+    Ts = [ones(w) log10.(ts[1:w])]
+    S = (Ts'*Ts)^-1 * Ts'
+    ols = S * log10.(tamsd[1:w,:])
+    ols[1,:] .-= log10(2dim)
+
+    fitCov = Array{Float64}(undef, 2, 2, n)
+    @showprogress for i in 1:n
+        _, Σ = errCov(ts, dim, ols[2,i], w)
+        fitCov[:,:,i] = S*Σ*S'
+    end
+
+    return ols, fitCov
 end
 
 """
@@ -66,7 +79,7 @@ Keyword input:
 - precompute_αs = 0.1:0.02:1.6: points at which precompute
 Output:
 - gls: 2×n matrix values of (log10 D, α) estimates
-- errCov: 2×2×n matrix with estimated parameter error covariances 
+- fitCov: 2×2×n matrix with estimated parameter error covariances 
 
 For estimation with experimental noise provide also:
 - init_D: vector with initial approximate values of diffusivity
@@ -235,16 +248,16 @@ function theorCovEffFBM(ts,k,l,ln,α)
 end
 
 """
-Covariance matrix of errors of TA-MSD and log TA-MSD. Data is assumed to come from FBM.
+Covariance matrix of errors of TA-MSD and log TA-MSD. Data is assumed to come from FBM. Labels ts correspond to the original trajectory.
 """
-function errCov(ts::AbstractVector, dim::Integer, α::Real,  logBase::Integer = 10)
+function errCov(ts::AbstractVector, dim::Integer, α::Real, w::Integer = length(ts)-1,  logBase::Integer = 10)
 
     ln = length(ts)
     S = float(eltype(ts))
-    errCov = Matrix{S}(undef, ln-1, ln-1)
-    logErrCov = Matrix{S}(undef, ln-1, ln-1)
+    errCov = Matrix{S}(undef, w, w)
+    logErrCov = Matrix{S}(undef, w, w)
 
-    for i in 1:ln-1, j in i:ln-1
+    for i in 1:w, j in i:w
         c = theorCovEffFBM(ts,i,j,ln,α)
         errCov[i,j] = dim*c
         logErrCov[i,j] = c / ( dim * 2ts[i]^α * 2ts[j]^α * log(logBase)^2 ) 

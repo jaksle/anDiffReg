@@ -9,6 +9,7 @@ def tamsd(X):
     """
     ln, n = X.shape[:2]
     msd = np.empty((ln - 1, n), dtype=X.dtype)
+
     if X.ndim == 3:
         for j in range(n):
             for i in range(1, ln):
@@ -30,18 +31,30 @@ def fit_ols(tamsd, dim, dt, w=None):
 
     Fitting TA-MSD with the OLS method.
     Input:
-    - tamsd: ln-1×n  matrix containing the entire TA-MSDs of the n length ln sample trajectories
+    - tamsd: (ln-1)×n  matrix containing the entire TA-MSDs of the n length ln sample trajectories
     - dim: original trajectory dimension (usually 1, 2 or 3)
     - dt: sampling interval
-    - w = max(5, tamsd.shape[0] // 10): integer fitting width size
+    - w = max(5, tamsd.shape[0] // 10): window size
+    Output:
+    - ols: 2×n matrix values of (log10 D, α) estimates
+    - fitCov: 2×2×n matrix with estimated parameter error covariances 
     """
+    ln, n = tamsd.shape
     if w is None:
-        w = max(5, tamsd.shape[0] // 10)
+        w = max(5, ln // 10)
     
-    Ts = np.column_stack((np.ones(w), np.log10(dt * np.arange(1, w + 1))))
-    estPar = np.linalg.inv(Ts.T @ Ts) @ Ts.T @ np.log10(tamsd[:w, :])
-    estPar[0, :] -= np.log10(2 * dim)
-    return estPar
+    ts = dt * np.arange(1, ln)
+    Ts = np.column_stack((np.ones(w), np.log10(ts[:w])))
+    S = np.linalg.inv(Ts.T @ Ts)
+    ols = S @ Ts.T @ np.log10(tamsd[:w, :])
+    ols[0, :] -= np.log10(2 * dim)
+
+    fitCov = np.empty((2, 2, n), dtype=np.float64)
+    for i in range(n):
+        _, Sigma = errCov(ts, dim, ols[1,i], w)
+        fitCov[:,:,i] = S @ Ts.T @ Sigma @ Ts @ S
+
+    return ols, fitCov
 
 def fit_gls(tamsd, dim, dt, init_alpha, init_D = None, sigma = None, precompute=True, precompute_alphas=np.arange(0.1, 1.62, 0.02)):
     """
@@ -198,26 +211,25 @@ def theorCovEff(ts, k, l, ln, alpha):
     return 2 / ((ln - k) * (ln - l)) * (S1 + S2)
 
 @njit
-def errCov(ts, dim, alpha, logBase=10):
+def errCov(ts, dim, alpha, w=None, logBase=10):
     """
-    Covariance matrix of errors of TA-MSD and log TA-MSD. Data is assumed to come from FBM.
+    Covariance matrix of errors of TA-MSD and log TA-MSD. Data is assumed to come from FBM. Labels ts correspond to the original trajectory.
     """
     K = lambda s, t: 2 * np.minimum(s, t) if np.abs(alpha - 1.0) < 1e-8 else (s**alpha + t**alpha - np.abs(s - t)**alpha)
     
-
     ln = len(ts)
-    errC = np.empty((ln - 1, ln - 1), dtype=np.float64)
-    logErrCov = np.empty((ln - 1, ln - 1), dtype=np.float64)
+    if w == None:
+        w = ln - 1
+    errC = np.empty((w, w), dtype=np.float64)
+    logErrCov = np.empty((w, w), dtype=np.float64)
 
-    for i in range(ln - 1):
-        for j in range(i, ln - 1):
-
+    for i in range(w):
+        for j in range(i, w):
             c = theorCovEff(ts, i + 1, j + 1, ln, alpha) 
             errC[i, j] = dim * c
             logErrCov[i, j] = c / (dim * K(ts[i], ts[i]) * K(ts[j], ts[j]) * (np.log(logBase) ** 2))
             errC[j, i] = errC[i, j]
             logErrCov[j, i] = logErrCov[i, j]
-
 
     return errC, logErrCov
 
