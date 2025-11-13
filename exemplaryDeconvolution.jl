@@ -34,14 +34,14 @@ end
 
 ## fitting
 
-ols = fit_ols(msd, 1, dt)
+ols, covOLS = fit_ols(msd, 1, dt)
 gls, covGLS = fit_gls(msd, 1, dt, ols[2,:]) 
 
 
 
 ## getting kde
 
-den = kde((gls[1,:],gls[2,:]),boundary = ((-1.5,1.5),(0.2,1.3)),npoints=(512,512))
+den = kde((gls[1,:],gls[2,:]), boundary = ((-1.5,1.5),(0.2,1.3)), npoints=(512,512))
 
 # plotting initial estimate
 xlab = L"$D$ [L$^2$/T$^\alpha$]"
@@ -116,7 +116,6 @@ function deconvolve_internal(logDs, αs, den, C, nIter)
     end
     return res
 end
-
 
 function deconvolve_gls(logDs::AbstractVector, αs::AbstractVector, den::AbstractMatrix, ts::AbstractVector, dim::Integer, (α_min,α_max)::Tuple{<:Real,<:Real}, nIter::Integer = 30)
     _, Σ = AnDiffReg.errCov(ts, dim, α_min)
