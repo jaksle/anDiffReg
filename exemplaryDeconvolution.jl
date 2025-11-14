@@ -42,7 +42,7 @@ gls, covGLS = fit_gls(msd, 1, dt, ols[2,:])
 # this is for the gls estimate 
 den = kde((gls[1,:],gls[2,:]), boundary = ((-1.5,1.5),(0.2,1.3)), npoints=(512,512))
 
-# for OLS estimate switch to this line 
+# for the OLS estimate switch to this line 
 # den = kde((ols[1,:],ols[2,:]), boundary = ((-1.5,1.5),(0.2,1.3)), npoints=(512,512))
 
 
@@ -71,15 +71,18 @@ lines!(denMarg0, den.y)
 
 fig
 
+##---------------------------------------------------------------
+# simple deconvolution
 
-## simple deconvolution
+dim = 1
+α = 0.7 # α for which to deconvolve
 
 # calculation
+deconvolvedPDF1 = deconvolve_gls(den.x, den.y, den.density, dt, ln, dim, α)
 
-deconvolvedPDF1 = deconvolve_gls(den.x, den.y, den.density, dt, ln, 1, 0.7)
-
-# for ols switch to this line
-# deconvolvedPDF1 = deconvolve_ols(den.x, den.y, den.density, dt, ln, 1, 0.7, 10)
+# for the OLS switch to this lines
+# w = 10 # OLS window size
+# deconvolvedPDF1 = deconvolve_ols(den.x, den.y, den.density, dt, ln, dim, α, w)
 
 # plot
 fig = Figure() 
@@ -103,13 +106,19 @@ lines!(denMarg1, den.y)
 
 fig
 
-## full deconvolution 
+
+##---------------------------------------------------------------
+# full deconvolution 
+
+dim = 1
+α_min, α_max = 0.3, 1.1 # range of α for which to deconvolve
 
 # calculation
-deconvolvedPDF2 = deconvolve_gls(den.x, den.y, den.density, dt, ln, 1, (0.3,1.1))
+deconvolvedPDF2 = deconvolve_gls(den.x, den.y, den.density, dt, ln, dim, (α_min,α_max))
 
-# for ols switch to this line
-# deconvolvedPDF2 = deconvolve_ols(den.x, den.y, den.density, dt, ln, 1, (0.3,1.1), 10)
+# for the OLS switch to this lines
+# w = 10 # OLS window size
+# deconvolvedPDF2 = deconvolve_ols(den.x, den.y, den.density, dt, ln, dim, (α_min,α_max), w)
 
 # plot
 fig = Figure()
@@ -132,236 +141,3 @@ ax = Axis(fig[1,3],
 lines!(denMarg2, den.y)
 
 fig
-
-##
-
-
-
-
-
-##
-
-###############
-
-
-
-thDen = [( -1 <= x <= 1 && ( 0.4 <= y <= 0.6 || 0.8 <= y <= 1.0)) ? 1/(0.4*2) : 0. for x in den.x, y in den.y ]
-
-sum((thDen .- den.density) .^2)*step(den.x)*step(den.y)
-sum((thDen .- resO) .^2)*step(den.x)*step(den.y)
-sum((thDen .- resI) .^2)*step(den.x)*step(den.y)
-
-scatter(bB[1,:],bB[2,:],markersize=3)
-
-heatmap(den.x,den.y,thDen)
-heatmap(den.x,den.y,den.density)
-heatmap(den.x,den.y,resO)
-heatmap(den.x,den.y,resI)
-
-surface(den.x,den.y,resI')
-
-denMarg = vec(sum(den.density,dims=1))
-denMarg .*= 1/(sum(denMarg)*step(den.y))
-
-denMarg2 = vec(sum(resO,dims=1))
-denMarg2 .*= 1/(sum(denMarg2)*step(den.y))
-
-denMarg3 = vec(sum(resI,dims=1))
-denMarg3 .*= 1/(sum(denMarg3)*step(den.y))
-
-
-denMarg = vec(sum(den.density,dims=2))
-denMarg .*= 1/(sum(denMarg)*step(den.x))
-
-denMarg2 = vec(sum(res,dims=2))
-denMarg2 .*= 1/(sum(denMarg2)*step(den.x))
-
-denMarg3 = vec(sum(resI,dims=2))
-denMarg3 .*= 1/(sum(denMarg3)*step(den.x))
-
-## top row
-xlab = L"$D$ [L$^2$/T$^\alpha$]"
-ylab = L"{\alpha}\ [1]"
-xtickL = [L"10^{-1}",L"10^{-0.5}","1",L"10^{0.5}",L"10^{1}"]
-xtick = (-1:0.5:1,xtickL)
-
-with_theme(theme_latexfonts()) do
-fig = Figure(size=(800,400))
-ga = fig[1, 1] = GridLayout()
-gb = fig[1, 2] = GridLayout()
-
-ax = Axis(ga[1,1],
-    yticks = 0.2:0.2:1.4,
-    xticks = xtick,
-    limits = (-1.2,1.2,0.2,1.2),
-    xlabel = xlab,
-    ylabel = ylab,
-    title = "Estimation results"
-)
-
-th = poly!(ax, Rect(-1,0.4,2,0.2),
-    color = :silver,
-    strokewidth = 1,
-    strokecolor = :black,
-)
-poly!(ax, Rect(-1,0.8,2,0.2),
-color = :silver,
-    strokewidth = 1,
-    strokecolor = :black,
-)
-
-gls = scatter!(ax,bB[1,:],bB[2,:],
-    color = :red,
-    alpha = 0.7,
-    markersize = 2.5,
-)
-axislegend(ax,[th, MarkerElement(color = :red,alpha=0.7, marker=:circle, markersize = 8)],
-    ["original distribution","GLS estimation"]
-)
-ax = Axis(ga[1,2],
-    xlabel = L"histogram of $p_\alpha$",
-    yticklabelsvisible = false,
-    limits = (0,3.1,0.2,1.2)
-)
-hist!(ax,bB[2,:],normalization=:pdf,direction=:x,
-    color = (:red,0.5),
-    strokewidth = 1,
-    strokecolor = :firebrick,
-    #fillalpha = 0.5
-)
-lines!(ax, [0,2.5,2.5,0],[0.4,0.4,0.6,0.6],
-    color = :black,
-    linewidth = 1.5,
-    linestyle = :dash
-)
-lines!(ax, [0,2.5,2.5,0],[0.8,0.8,1.0,1.0],
-    color = :black,
-    linewidth = 1.5,
-    linestyle = :dash
-)
-colsize!(ga, 1, Relative(4/5))
-colgap!(ga,10)
-
-ax2 = Axis(gb[1,1],
-    yticks = 0.2:0.2:1.4,
-    xticks = xtick,
-    limits = (-1.2,1.2,0.2,1.2),
-    xlabel = xlab,
-    title = "Density estimate"
-    #ylabel = ylab,
-)
-heatmap!(ax2,den.x,den.y,den.density,
-    colormap = :thermal,
-)
-
-ax = Axis(gb[1,2],
-    limits = (0,3.1,0.2,1.2),
-    yticklabelsvisible = false,
-    xlabel = L"density $p_\alpha$",
-)
-
-lines!(ax, [0,2.5,2.5,0],[0.4,0.4,0.6,0.6],
-    color = :black,
-    linewidth = 1.5,
-    linestyle = :dash
-)
-lines!(ax, [0,2.5,2.5,0],[0.8,0.8,1.0,1.0],
-    color = :black,
-    linewidth = 1.5,
-    linestyle = :dash
-)
-lines!(ax,denMarg,den.y,
-    color = :orange,
-)
-colsize!(gb, 1, Relative(4/5))
-colgap!(gb,10)
-
-#fig
-save("deconI1.pdf",fig)
-end
-
-## bottom row
-
-
-xlab = L"$D$ [L$^2$/T$^\alpha$]"
-xtickL = [L"10^{-1}",L"10^{-0.5}","1",L"10^{0.5}",L"10^{1}"]
-xtick = (-1:0.5:1,xtickL)
-ylab = L"{\alpha}\ [1]"
-with_theme(theme_latexfonts()) do
-fig = Figure(size=(800,400))
-ga = fig[1, 1] = GridLayout()
-gb = fig[1, 2] = GridLayout()
-
-
-ax = Axis(ga[1,1],
-    yticks = 0.2:0.2:1.4,
-    xticks = xtick,
-    limits = (-1.2,1.2,0.2,1.2),
-    xlabel = xlab,
-    title = "Simple deconvolution",
-    ylabel = ylab,
-)
-heatmap!(ax,den.x,den.y,resO,
-    #colormap = :thermal,
-)
-
-ax = Axis(ga[1,2],
-    limits = (0,3.1,0.2,1.2),
-    yticklabelsvisible = false,
-    xlabel = L"density $p_\alpha$",
-)
-
-lines!(ax, [0,2.5,2.5,0],[0.4,0.4,0.6,0.6],
-    color = :black,
-    linewidth = 1.5,
-    linestyle = :dash
-)
-lines!(ax, [0,2.5,2.5,0],[0.8,0.8,1.0,1.0],
-    color = :black,
-    linewidth = 1.5,
-    linestyle = :dash
-)
-lines!(ax,denMarg2,den.y,
-    color = :turquoise4,
-)
-colsize!(ga, 1, Relative(4/5))
-colgap!(ga,10)
-
-
-ax = Axis(gb[1,1],
-    yticks = 0.2:0.2:1.4,
-    xticks = xtick,
-    limits = (-1.2,1.2,0.2,1.2),
-    xlabel = xlab,
-    title = "Interpolated deconvolution",
-    #ylabel = ylab,
-)
-heatmap!(ax,den.x,den.y,resI,
-    #colormap = :thermal,
-)
-
-ax = Axis(gb[1,2],
-    limits = (0,3.1,0.2,1.2),
-    yticklabelsvisible = false,
-    xlabel = L"density $p_\alpha$",
-)
-
-lines!(ax, [0,2.5,2.5,0],[0.4,0.4,0.6,0.6],
-    color = :black,
-    linewidth = 1.5,
-    linestyle = :dash
-)
-lines!(ax, [0,2.5,2.5,0],[0.8,0.8,1.0,1.0],
-    color = :black,
-    linewidth = 1.5,
-    linestyle = :dash
-)
-lines!(ax,denMarg3,den.y,
-    color = :turquoise4,
-)
-colsize!(gb, 1, Relative(4/5))
-colgap!(gb,10)
-
-#fig
-save("deconI2.pdf",fig)
-end

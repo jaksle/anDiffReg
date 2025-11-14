@@ -234,14 +234,14 @@ end
 
 Deconvolving pdf of estimated (logD, α) obtained with the GLS method. It removes the blur caused by the estimation errors, reconstructing the original distribution of (logD, α). This method assumes the data was FBM.
 Input:
-- logDs: labels of logD
-- αs: labels of α
+- logDs: labels of log diffusivity
+- αs: labels of anomalous index
 - den: density which we want to deconvolve
 - Δt: sampling inverval
 - ln: length of the orignal trajectory used
 - dim: trajectory dimension (typically 1, 2 or 3)
 For simple deconvolution provide:
-- α: the value for which deconvolve, should be the most typical in the sample
+- α: the anomalous index value for which deconvolve, should be the most representative of the sample
 For full deconvolution provide:
 - (α_min,α_max): range of α for which deconvolve
 Full deconvolution is much more computationally expensive, but the result better reflects the original distribution.
@@ -267,8 +267,8 @@ end
 
 Deconvolving pdf of estimated (logD, α) obtained with the OLS method. It removes the blur caused by the estimation errors, reconstructing the original distribution of (logD, α). This method assumes the data was FBM.
 Input:
-- logDs: labels of logD
-- αs: labels of α
+- logDs: labels of log diffusivity
+- αs: labels of anomalous index
 - den: density which we want to deconvolve
 - Δt: sampling inverval
 - ln: length of the orignal trajectory used

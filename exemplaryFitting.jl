@@ -7,7 +7,7 @@ using .AnDiffReg
 ##---------------------------------------------------------------
 # exemplary data: generate simulated fractional Brownian motion
 
-α, D = 0.8, 1 # FBM parameters: Hurst index H and diffusivity D
+α, D = 0.8, 1 # FBM parameters: anomalous index α and diffusivity D
 n = 10^4 # number of trajectories
 ln = 100 # trajectory length
 dt = 1. # time interval
@@ -65,7 +65,9 @@ fig
 
 ##---------------------------------------------------------------
 # parameter estimates
-ols, covOLS = fit_ols(msd, 2, dt)
+
+dim = 2
+ols, covOLS = fit_ols(msd, dim, dt)
 
 
 mean(ols, dims=2) # average estimates
@@ -73,14 +75,18 @@ cov(ols') # covariance of the estimates, compare with predicted covOLS
 
 
 # here init α is the true value from the simulation, ols estimate also can be used
-gls, covGLS = fit_gls(msd, 2, dt, fill(α_init, n)) 
+gls, covGLS = fit_gls(msd, dim, dt, fill(α_init, n)) 
 
 
 mean(gls, dims=2) 
 cov(gls') 
 
 # covariance is computed for each trajectory, could be slow if there are many
-glsP, covGLSP = fit_gls(msd[:,1:100], 2, dt, fill(α_init, n), precompute = false)
+glsP, covGLSP = fit_gls(msd[:,1:100], dim, dt, fill(α_init, n), precompute = false)
+
+
+##---------------------------------------------------------------
+# plot with confidence area
 
 
 ##---------------------------------------------------------------
