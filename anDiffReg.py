@@ -24,7 +24,7 @@ def tamsd(X):
     
     return msd
 
-
+@njit
 def fit_ols(tamsd, dim, dt, w=None):
     """
     fit_ols(tamsd::AbstractMatrix, dim::Integer, dt::Real, w::Integer)
