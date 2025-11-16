@@ -1,6 +1,7 @@
 module AnDiffReg
 
-using Statistics, LinearAlgebra, ProgressMeter, FFTW
+using Statistics, Distributions, LinearAlgebra, FFTW
+using ProgressMeter
 
 export tamsd, fit_ols, fit_gls, deconvolve_ols, deconvolve_gls
 
@@ -218,11 +219,11 @@ function deconvolve_internal(logDs, αs, den, C, nIter)
     ns = [pdf(nn,[x,y]) for x in logDs, y in αs]
     ns = circshift(ns, (length(logDs)÷2, length(αs)÷2))
     ins = reverse(ns)
-
+    d1 = size(den)[1]
     for _ in 1:nIter
-        d = real.(ifft( fft(res) .* fft(ns)))
+        d = irfft(rfft(res) .* rfft(ns), d1)
         d[abs.(d) .< 10^-12] .= 10^-12
-        res .*= real.(ifft( fft(den ./ d) .* fft(ins)))
+        res .*= irfft(rfft(den ./ d) .* rfft(ins), d1)
     end
     return res
 end
