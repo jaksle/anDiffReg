@@ -3,7 +3,7 @@ module AnDiffReg
 using Statistics, Distributions, LinearAlgebra, FFTW
 using ProgressMeter
 
-export tamsd, fit_ols, fit_gls, deconvolve_ols, deconvolve_gls
+export tamsd, fit_ols, fit_gls, cov_ols, cov_gls, deconvolve_ols, deconvolve_gls
 
 """
     TA-MSD of trajectories. Time should go along first axis, subsequent trajectories along second axis, x, y, z coordinates along third axis.
@@ -45,7 +45,7 @@ Input:
 - Δt: sampling interval
 - w = max(5,size(tamsd)[1]÷10): window size
 Output:
-- ols: 2×n matrix values of (log10 D, α) estimates
+- ols: 2×n matrix values of (log₁₀, α) estimates
 - fitCov: 2×2×n matrix with estimated parameter error covariances 
 """
 function fit_ols(tamsd::AbstractMatrix, dim::Integer, Δt::Real, w::Integer = max(5,size(tamsd)[1]÷10))
@@ -79,7 +79,7 @@ Keyword input:
 - precompute = true: if true first tabularise error covariances, if false calculate it for each trajectory
 - precompute_αs = 0.1:0.02:1.6: points at which precompute
 Output:
-- gls: 2×n matrix values of (log10 D, α) estimates
+- gls: 2×n matrix values of (log₁₀ D, α) estimates
 - fitCov: 2×2×n matrix with estimated parameter error covariances 
 
 For estimation with experimental noise provide also:
@@ -290,14 +290,14 @@ function deconvolve_ols(logDs::AbstractVector, αs::AbstractVector, den::Abstrac
     ts = Δt * (1:ln) 
     Ts = [ones(w) log10.(ts[1:w])]
     S = (Ts'*Ts)^-1 * Ts'
-    _, Σ = AnDiffReg.errCov(ts, dim, α, w)
+    _, Σ = errCov(ts, dim, α, w)
 
     return deconvolve_internal(logDs, αs, den, S*Σ*S', nIter)
 end
 
 function deconvolve_gls(logDs::AbstractVector, αs::AbstractVector, den::AbstractMatrix, Δt::Real, ln::Integer, dim::Integer, (α_min,α_max)::Tuple{<:Real,<:Real}, nIter::Integer = 30)
     ts = Δt * (1:ln) 
-    _, Σ = AnDiffReg.errCov(ts, dim, α_min)
+    _, Σ = errCov(ts, dim, α_min)
     Ts = [ones(ln-1) log10.(ts[1:end-1])]
     res = deconvolve_internal(logDs, αs, den, (Ts'*Σ^-1*Ts)^-1, nIter)
 
@@ -322,7 +322,7 @@ end
 
 function deconvolve_ols(logDs::AbstractVector, αs::AbstractVector, den::AbstractMatrix, Δt::Real, ln::Integer, dim::Integer, (α_min,α_max)::Tuple{<:Real,<:Real}, w::Integer, nIter::Integer = 30)
     ts = Δt * (1:ln) 
-    _, Σ = AnDiffReg.errCov(ts, dim, α_min, w)
+    _, Σ = errCov(ts, dim, α_min, w)
     Ts = [ones(w) log10.(ts[1:w])]
     S = (Ts'*Ts)^-1 * Ts'
     res = deconvolve_internal(logDs, αs, den, S*Σ*S', nIter)
@@ -331,7 +331,7 @@ function deconvolve_ols(logDs::AbstractVector, αs::AbstractVector, den::Abstrac
     j2 = findlast(αs .< α_max)
 
     @showprogress for k in j1+1:j2-1
-        _, Σ = AnDiffReg.errCov(ts, 1, αs[k], w)
+        _, Σ = errCov(ts, 1, αs[k], w)
         zs = deconvolve_internal(logDs, αs, den, S*Σ*S', nIter)
         res[:,k] .= zs[:,k]
     end
