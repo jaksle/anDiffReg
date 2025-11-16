@@ -3,7 +3,7 @@ module AnDiffReg
 using Statistics, Distributions, LinearAlgebra, FFTW
 using ProgressMeter
 
-export tamsd, fit_ols, fit_gls, deconvolve_ols, deconvolve_gls
+export tamsd, fit_ols, fit_gls, cov_ols, cov_gls, deconvolve_ols, deconvolve_gls
 
 """
     TA-MSD of trajectories. Time should go along first axis, subsequent trajectories along second axis, x, y, z coordinates along third axis.
@@ -45,7 +45,7 @@ Input:
 - Δt: sampling interval
 - w = max(5,size(tamsd)[1]÷10): window size
 Output:
-- ols: 2×n matrix values of (log10 D, α) estimates
+- ols: 2×n matrix values of (log₁₀, α) estimates
 - fitCov: 2×2×n matrix with estimated parameter error covariances 
 """
 function fit_ols(tamsd::AbstractMatrix, dim::Integer, Δt::Real, w::Integer = max(5,size(tamsd)[1]÷10))
@@ -79,7 +79,7 @@ Keyword input:
 - precompute = true: if true first tabularise error covariances, if false calculate it for each trajectory
 - precompute_αs = 0.1:0.02:1.6: points at which precompute
 Output:
-- gls: 2×n matrix values of (log10 D, α) estimates
+- gls: 2×n matrix values of (log₁₀ D, α) estimates
 - fitCov: 2×2×n matrix with estimated parameter error covariances 
 
 For estimation with experimental noise provide also:
