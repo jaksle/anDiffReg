@@ -6,7 +6,7 @@ using ProgressMeter
 export tamsd, fit_ols, fit_gls, cov_ols, cov_gls, deconvolve_ols, deconvolve_gls
 
 """
-    TA-MSD of trajectories. Time should go along first axis, subsequent trajectories along second axis, x, y, z coordinates along third axis.
+TA-MSD of trajectories. Time should go along first axis, subsequent trajectories along second axis, x, y, z coordinates along third axis.
 """
 function tamsd(X::AbstractArray{T,N}) where {T <: Real, N}
     ln, n, w =  size(X)
@@ -212,7 +212,7 @@ end
 ## deconvolution 
 
 """
-    Performs Richardson-Lucy deconvolution with Gaussian kernel given covariance C.
+Performs Richardson-Lucy deconvolution with Gaussian kernel given covariance C.
 """
 function deconvolve_internal(logDs, αs, den, C, nIter)
     res = copy(den)
