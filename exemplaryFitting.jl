@@ -105,8 +105,8 @@ mlogD, mA = mean(gls, dims = 2)
 C = sqrt(cov_gls(mA, dt, ln, d)) # from the predicted covariance of the mean estimated parameters
 
 # these are formulas for the confidence elipsis of 2D Gaussian
-fx(t) = sqrt(5.99) * (C[1,1]*cos(t) + C[1,2]*sin(t) ) + mlogD
-fy(t) = sqrt(5.99) * (C[2,1]*cos(t)+ C[2,2]*sin(t) ) + mA
+fx(t) = sqrt(5.99) * ( C[1,1]*cos(t) + C[1,2]*sin(t) ) + mlogD
+fy(t) = sqrt(5.99) * ( C[2,1]*cos(t)+ C[2,2]*sin(t) ) + mA
 
 ϕs = LinRange(0,2pi,200)
 lines!(ax, fx.(ϕs), fy.(ϕs),
