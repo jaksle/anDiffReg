@@ -8,4 +8,4 @@ Main functions are in **AnDiffReg.jl** (Julia) or **anDiffReg.py** (Python) file
 - `cov_ols`, `cov_gls` for calculating expected covariance of the anomalous diffusion parameters estimates given their true values,
 - `deconvolve_ols`, `deconvolve_gls` for deconvolving the pdf of estimates obtained from `fit_ols` or `fit_gls` methods which removes the influence of statistical errors.
 
-See `?` in Julia or `help` in Python for more details. These methods work for TA-MSD of FBM trajectories in any dimension. The effect of additive noise can be included if its standard deviation is known. Scripts **exemplaryFitting** show how the basic TA-MSD fitting and analysis could look like. Scripts **exemplaryDeconvolution** demonstrate how the deconvolution procedure can be performed.
+See `?` in Julia or `help` in Python for more details. These methods work for TA-MSD of FBM trajectories in any dimension. The effects of additive noise can be included if its standard deviation is known. Scripts **exemplaryFitting** show how the basic TA-MSD fitting and analysis could look like. Scripts **exemplaryDeconvolution** demonstrate how the deconvolution procedure can be performed.
