@@ -113,7 +113,7 @@ fig
 d = 1
 α_min, α_max = 0.3, 1.1 # range of α for which to deconvolve
 
-# calculation
+# calculation, note it can take significantly longer time
 deconvolvedPDF2 = deconvolve_gls(den.x, den.y, den.density, dt, ln, d, (α_min,α_max))
 
 # for the OLS switch to this lines

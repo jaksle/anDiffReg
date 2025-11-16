@@ -29,7 +29,7 @@ def tamsd(X):
 @njit
 def fit_ols(tamsd, dim, dt, w=None):
     """
-    fit_ols(tamsd::AbstractMatrix, dim::Integer, dt::Real, w::Integer)
+        fit_ols(tamsd, dim, dt, w)
 
     Fitting TA-MSD with the OLS method.
     Input:
@@ -60,8 +60,8 @@ def fit_ols(tamsd, dim, dt, w=None):
 
 def fit_gls(tamsd, dim, dt, init_alpha, init_D = None, sigma = None, precompute=True, precompute_alphas=np.arange(0.1, 1.62, 0.02)):
     """
-        fit_gls(tamsd, dim, dt, init_α, ...)
-        fit_gls(tamsd, dim, dt, init_α,, init_D, sigma, ...)
+        fit_gls(tamsd, dim, dt, init_alpha, ...)
+        fit_gls(tamsd, dim, dt, init_alpha,, init_D, sigma, ...)
 
     Fitting TA-MSD with the GLS method.
     Input:
@@ -195,6 +195,9 @@ def fit_gls_noise(tamsd, dim, dt, init_alpha, init_D, sigma, precompute=True, pr
             fitCov[:, :, i] = np.linalg.inv(Ts.T @ np.linalg.inv(errC1) @ Ts)
 
     return gls, fitCov
+
+
+# covariance functions
 
 @njit
 def theorCovEff(ts, k, l, ln, alpha):

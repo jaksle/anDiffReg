@@ -255,7 +255,7 @@ Output: matrix with the deconvolved pdf.
 function deconvolve_gls(logDs::AbstractVector, αs::AbstractVector, den::AbstractMatrix, Δt::Real, ln::Integer, dim::Integer, α::Real, nIter::Integer = 30) 
     ts = Δt * (1:ln) 
     Ts = [ones(ln-1) log10.(ts[1:end-1])]
-    _, Σ = AnDiffReg.errCov(ts, dim, α)
+    _, Σ = errCov(ts, dim, α)
 
     return deconvolve_internal(logDs, αs, den, (Ts'*Σ^-1*Ts)^-1, nIter)
 end
@@ -290,14 +290,14 @@ function deconvolve_ols(logDs::AbstractVector, αs::AbstractVector, den::Abstrac
     ts = Δt * (1:ln) 
     Ts = [ones(w) log10.(ts[1:w])]
     S = (Ts'*Ts)^-1 * Ts'
-    _, Σ = AnDiffReg.errCov(ts, dim, α, w)
+    _, Σ = errCov(ts, dim, α, w)
 
     return deconvolve_internal(logDs, αs, den, S*Σ*S', nIter)
 end
 
 function deconvolve_gls(logDs::AbstractVector, αs::AbstractVector, den::AbstractMatrix, Δt::Real, ln::Integer, dim::Integer, (α_min,α_max)::Tuple{<:Real,<:Real}, nIter::Integer = 30)
     ts = Δt * (1:ln) 
-    _, Σ = AnDiffReg.errCov(ts, dim, α_min)
+    _, Σ = errCov(ts, dim, α_min)
     Ts = [ones(ln-1) log10.(ts[1:end-1])]
     res = deconvolve_internal(logDs, αs, den, (Ts'*Σ^-1*Ts)^-1, nIter)
 
@@ -305,7 +305,7 @@ function deconvolve_gls(logDs::AbstractVector, αs::AbstractVector, den::Abstrac
     j2 = findlast(αs .< α_max)
 
     @showprogress for k in j1+1:j2-1
-        _, Σ = AnDiffReg.errCov(ts, 1, αs[k] )
+        _, Σ = errCov(ts, 1, αs[k] )
         zs = deconvolve_internal(logDs, αs, den, (Ts'*Σ^-1*Ts)^-1, nIter)
         res[:,k] .= zs[:,k]
     end
@@ -322,7 +322,7 @@ end
 
 function deconvolve_ols(logDs::AbstractVector, αs::AbstractVector, den::AbstractMatrix, Δt::Real, ln::Integer, dim::Integer, (α_min,α_max)::Tuple{<:Real,<:Real}, w::Integer, nIter::Integer = 30)
     ts = Δt * (1:ln) 
-    _, Σ = AnDiffReg.errCov(ts, dim, α_min, w)
+    _, Σ = errCov(ts, dim, α_min, w)
     Ts = [ones(w) log10.(ts[1:w])]
     S = (Ts'*Ts)^-1 * Ts'
     res = deconvolve_internal(logDs, αs, den, S*Σ*S', nIter)
@@ -331,12 +331,12 @@ function deconvolve_ols(logDs::AbstractVector, αs::AbstractVector, den::Abstrac
     j2 = findlast(αs .< α_max)
 
     @showprogress for k in j1+1:j2-1
-        _, Σ = AnDiffReg.errCov(ts, 1, αs[k], w)
+        _, Σ = errCov(ts, 1, αs[k], w)
         zs = deconvolve_internal(logDs, αs, den, S*Σ*S', nIter)
         res[:,k] .= zs[:,k]
     end
 
-    _, Σ = AnDiffReg.errCov(ts, 1, α_max, w)
+    _, Σ = errCov(ts, 1, α_max, w)
     zs = deconvolve_internal(logDs, αs, den, S*Σ*S', nIter)
 
     res[:,j2:end] .= zs[:,j2:end]
@@ -347,7 +347,7 @@ end
 
 
 
-## utility functions
+## covariance functions
 
 function incrCov(ts,i,j,k,l,K) 
     a, b, c, d = ts[i], ts[j], ts[k], ts[l]
