@@ -9,7 +9,7 @@ using .AnDiffReg
 
 ##---------------------------------------------------------------
 # exemplary data: mixture of FBMs
-# this is the same system as considered in the "Non-parametric deconvolution" section of the article.
+# this is the same system as considered in the "Non-parametric deconvolution" section of the article
 
 ln = 100
 n = 10^4
@@ -74,15 +74,15 @@ fig
 ##---------------------------------------------------------------
 # simple deconvolution
 
-dim = 1
+d = 1 # dimension
 α = 0.7 # α for which to deconvolve
 
 # calculation
-deconvolvedPDF1 = deconvolve_gls(den.x, den.y, den.density, dt, ln, dim, α)
+deconvolvedPDF1 = deconvolve_gls(den.x, den.y, den.density, dt, ln, d, α)
 
 # for the OLS switch to this lines
 # w = 10 # OLS window size
-# deconvolvedPDF1 = deconvolve_ols(den.x, den.y, den.density, dt, ln, dim, α, w)
+# deconvolvedPDF1 = deconvolve_ols(den.x, den.y, den.density, dt, ln, d, α, w)
 
 # plot
 fig = Figure() 
@@ -110,15 +110,15 @@ fig
 ##---------------------------------------------------------------
 # full deconvolution 
 
-dim = 1
+d = 1
 α_min, α_max = 0.3, 1.1 # range of α for which to deconvolve
 
 # calculation
-deconvolvedPDF2 = deconvolve_gls(den.x, den.y, den.density, dt, ln, dim, (α_min,α_max))
+deconvolvedPDF2 = deconvolve_gls(den.x, den.y, den.density, dt, ln, d, (α_min,α_max))
 
 # for the OLS switch to this lines
 # w = 10 # OLS window size
-# deconvolvedPDF2 = deconvolve_ols(den.x, den.y, den.density, dt, ln, dim, (α_min,α_max), w)
+# deconvolvedPDF2 = deconvolve_ols(den.x, den.y, den.density, dt, ln, d, (α_min,α_max), w)
 
 # plot
 fig = Figure()
@@ -141,3 +141,4 @@ ax = Axis(fig[1,3],
 lines!(denMarg2, den.y)
 
 fig
+

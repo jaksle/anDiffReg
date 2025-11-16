@@ -7,6 +7,8 @@ def tamsd(X):
     """
     TA-MSD of trajectories. Time should go along first axis, subsequent trajectories along second axis, x, y, z coordinates along third axis.
     """
+    if X.ndim == 1:
+        X = X.reshape(-1,1)
     ln, n = X.shape[:2]
     msd = np.empty((ln - 1, n), dtype=X.dtype)
 
@@ -45,14 +47,14 @@ def fit_ols(tamsd, dim, dt, w=None):
     
     ts = dt * np.arange(1, ln)
     Ts = np.column_stack((np.ones(w), np.log10(ts[:w])))
-    S = np.linalg.inv(Ts.T @ Ts)
-    ols = S @ Ts.T @ np.log10(tamsd[:w, :])
+    S = np.linalg.inv(Ts.T @ Ts) @ Ts.T
+    ols = S @ np.log10(tamsd[:w, :])
     ols[0, :] -= np.log10(2 * dim)
 
     fitCov = np.empty((2, 2, n), dtype=np.float64)
     for i in range(n):
         _, Sigma = errCov(ts, dim, ols[1,i], w)
-        fitCov[:,:,i] = S @ Ts.T @ Sigma @ Ts @ S
+        fitCov[:,:,i] = S @ Sigma @ S.T
 
     return ols, fitCov
 
