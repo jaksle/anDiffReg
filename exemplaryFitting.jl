@@ -67,8 +67,8 @@ fig
 ##---------------------------------------------------------------
 # parameter estimates
 
-dim = 2
-ols, covOLS = fit_ols(msd, dim, dt)
+d = 2
+ols, covOLS = fit_ols(msd, d, dt)  # here 10% default window is used
 
 
 mean(ols, dims=2) # average estimates
@@ -78,18 +78,19 @@ cov(ols') # covariance of the estimates, compare with predicted covOLS
 
 # here init α is the true value from the simulation, ols estimate also can be used
 α_init = 0.8 # used only optionally for initial estimate
-gls, covGLS = fit_gls(msd, dim, dt, fill(α_init, n)) 
+gls, covGLS = fit_gls(msd, d, dt, fill(α_init, n)) 
 
 
 mean(gls, dims=2) 
 cov(gls') 
 
 # covariance is computed for each trajectory, could be slow if there are many
-glsP, covGLSP = fit_gls(msd[:,1:100], dim, dt, fill(α_init, n), precompute = false)
+glsP, covGLSP = fit_gls(msd[:,1:100], d, dt, fill(α_init, n), precompute = false)
 
 
 ##---------------------------------------------------------------
 # scatter plot of the estimated parameters with a 95% confidence area
+using CairoMakie
 
 fig = Figure()
 ax = Axis(fig[1,1],
@@ -101,7 +102,7 @@ scatter!(ax,gls[1,1:1000], gls[2,1:1000],
 )
 
 mlogD, mA = mean(gls, dims = 2) 
-C = sqrt(dropdims(mean(covGLS, dims = 3), dims=3)) # note: GLS covariance of the mean parameters can be used instead
+C = sqrt(cov_gls(mA, dt, ln, d)) # from the predicted covariance of the mean estimated parameters
 
 # these are formulas for the confidence elipsis of 2D Gaussian
 fx(t) = sqrt(5.99) * (C[1,1]*cos(t) + C[1,2]*sin(t) ) + mlogD

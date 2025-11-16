@@ -44,8 +44,9 @@ Input:
 - dim: original trajectory dimension (usually 1, 2 or 3)
 - Δt: sampling interval
 - w = max(5,size(tamsd)[1]÷10): window size
+
 Output:
-- ols: 2×n matrix values of (log₁₀, α) estimates
+- ols: 2×n matrix values of (log10, α) estimates
 - fitCov: 2×2×n matrix with estimated parameter error covariances 
 """
 function fit_ols(tamsd::AbstractMatrix, dim::Integer, Δt::Real, w::Integer = max(5,size(tamsd)[1]÷10))
@@ -78,13 +79,13 @@ Input:
 Keyword input:
 - precompute = true: if true first tabularise error covariances, if false calculate it for each trajectory
 - precompute_αs = 0.1:0.02:1.6: points at which precompute
-Output:
-- gls: 2×n matrix values of (log₁₀ D, α) estimates
-- fitCov: 2×2×n matrix with estimated parameter error covariances 
-
 For estimation with experimental noise provide also:
 - init_D: vector with initial approximate values of diffusivity
 - σ: noise amplitude, X_obs = X_true + σξ
+
+Output:
+- gls: 2×n matrix values of (log10 D, α) estimates
+- fitCov: 2×2×n matrix with estimated parameter error covariances 
 """
 function fit_gls(tamsd::AbstractMatrix, dim::Integer, Δt::Real, init_α::AbstractVector;
      precompute::Bool = true,
@@ -233,7 +234,7 @@ end
     deconvolve_gls(logDs::AbstractVector, αs::AbstractVector, den::AbstractMatrix, Δt::Real, ln::Integer, dim::Integer, α::Real, nIter::Integer = 30) 
     deconvolve_gls(logDs::AbstractVector, αs::AbstractVector, den::AbstractMatrix, Δt::Real, ln::Integer, dim::Integer, (α_min,α_max)::Tuple{<:Real,<:Real}, nIter::Integer = 30)
 
-Deconvolving pdf of estimated (logD, α) obtained with the GLS method. It removes the blur caused by the estimation errors, reconstructing the original distribution of (logD, α). This method assumes the data was FBM.
+Deconvolving pdf of estimated (log10 D, α) obtained with the GLS method. It removes the blur caused by the estimation errors, reconstructing the original distribution of (log10 D, α). This method assumes the data was FBM.
 Input:
 - logDs: labels of log diffusivity
 - αs: labels of anomalous index
@@ -248,7 +249,7 @@ For full deconvolution provide:
 Full deconvolution is much more computationally expensive, but the result better reflects the original distribution.
 
 Optional input:
-- nIter: number of steps in the Richardson-Lucy deconvolution algorithm
+- nIter = 30: number of steps in the Richardson-Lucy deconvolution algorithm
 
 Output: matrix with the deconvolved pdf. 
 """
@@ -266,7 +267,7 @@ end
     deconvolve_ols(logDs::AbstractVector, αs::AbstractVector, den::AbstractMatrix, Δt::Real, ln::Integer, dim::Integer, α::Real, w::Integer, nIter::Integer = 30)
     deconvolve_ols(logDs::AbstractVector, αs::AbstractVector, den::AbstractMatrix, Δt::Real, ln::Integer, dim::Integer, (α_min,α_max)::Tuple{<:Real,<:Real}, w::Integer, nIter::Integer = 30)
 
-Deconvolving pdf of estimated (logD, α) obtained with the OLS method. It removes the blur caused by the estimation errors, reconstructing the original distribution of (logD, α). This method assumes the data was FBM.
+Deconvolving pdf of estimated (log10 D, α) obtained with the OLS method. It removes the blur caused by the estimation errors, reconstructing the original distribution of (log10 D, α). This method assumes the data was FBM.
 Input:
 - logDs: labels of log diffusivity
 - αs: labels of anomalous index
@@ -282,7 +283,7 @@ For full deconvolution provide:
 Full deconvolution is much more computationally expensive, but the result better reflects the original distribution.
 
 Optional input:
-- nIter: number of steps in the Richardson-Lucy deconvolution algorithm
+- nIter = 30: number of steps in the Richardson-Lucy deconvolution algorithm
 
 Output: matrix with the deconvolved pdf. 
 """
@@ -349,6 +350,62 @@ end
 
 ## covariance functions
 
+"""
+    cov_gls(α::Real, Δt::Real, ln::Integer, dim::Integer, w::Integer = ln-1, logBase::Real = 10)
+    cov_gls(α::Real, Δt::Real, ln::Integer, dim::Integer, D::Real, σ::Real, w::Integer = ln-1, logBase::Real = 10)
+
+Calculating the expected covariance of the anomalous diffusion parameters GLS estimates (log D, α) given their true values.
+Input:
+- α: true anomalous diffusion index
+- Δt: sampling inverval
+- ln: length of the orignal trajectory used
+- dim: trajectory dimension (typically 1, 2 or 3)
+- w = ln-1: size of window in which the GLS was calculated 
+- logBase = 10: logarithm base used for log TA-MSD and log diffusivity
+For the FBM with additive experimental noise provide also:
+- D: true value of the diffusivity
+- σ: noise amplitude, X_obs = X_true + σξ
+
+Output: 2×2 matrix with the expected covariance of (log D, α)
+"""
+function cov_gls(α::Real, Δt::Real, ln::Integer, dim::Integer, w::Integer = ln-1, logBase::Real = 10)
+    ts = Δt * (1:ln) 
+    _, Σ = errCov(ts, dim, α, w, logBase)
+    Ts = [ones(w) log.(logBase, ts[1:w])]
+    return (Ts'*Σ^-1*Ts)^-1
+end
+
+function cov_gls(α::Real, Δt::Real, ln::Integer, dim::Integer, D::Real, σ::Real, w::Integer = ln-1, logBase::Real = 10)
+    ts = Δt * (1:ln) 
+    orgC, _ = errCov(ts, dim, α, w, logBase)
+    Ts = [ones(w) log.(logBase, ts[1:w])]
+    noiseC = noiseCov.(ln, 1:w, (1:w)')
+    crossC = crossCov(ts, dim, α, w)
+    Σ = @. 1/(log(logBase)^2) * (D^2*orgC + σ^2*D*crossC + σ^4*dim*noiseC)/((2D*dim*ts[1:w]^α)*(2D*dim*ts[1:w]'^α))
+    return (Ts'*Σ^-1*Ts)^-1
+end
+
+"""
+    cov_ols(α::Real, Δt::Real, ln::Integer, dim::Integer, w::Integer, logBase::Real = 10)
+Calculating the expected covariance of the anomalous diffusion parameters OLS estimates (log D, α) given their true values.
+Input:
+- α: true anomalous diffusion index
+- Δt: sampling inverval
+- ln: length of the orignal trajectory used
+- dim: trajectory dimension (typically 1, 2 or 3)
+- w: size of window in which the OLS was calculated 
+- logBase = 10: logarithm base used for log TA-MSD and log diffusivity
+
+Output: 2×2 matrix with the expected covariance of (log D, α)
+"""
+function cov_ols(α::Real, Δt::Real, ln::Integer, dim::Integer, w::Integer, logBase::Real = 10)
+    ts = Δt * (1:ln) 
+    _, Σ = errCov(ts, dim, α, w, logBase)
+    Ts = [ones(w) log.(logBase, ts[1:w])]
+    S = (Ts'*Ts)^-1 * Ts'
+    return S*Σ*S'
+end
+
 function incrCov(ts,i,j,k,l,K) 
     a, b, c, d = ts[i], ts[j], ts[k], ts[l]
     K(a,b) + K(a+c,b+d) - K(a,b+d) - K(a+c,b)
@@ -390,7 +447,7 @@ end
 """
 Covariance matrix of errors of TA-MSD and log TA-MSD. Data is assumed to come from FBM, D = 1. Labels ts correspond to the original trajectory.
 """
-function errCov(ts::AbstractVector, dim::Integer, α::Real, w::Integer = length(ts)-1,  logBase::Integer = 10)
+function errCov(ts::AbstractVector, dim::Integer, α::Real, w::Integer = length(ts)-1,  logBase::Real = 10)
 
     ln = length(ts)
     S = float(eltype(ts))
@@ -406,7 +463,7 @@ function errCov(ts::AbstractVector, dim::Integer, α::Real, w::Integer = length(
     return Symmetric(errCov), Symmetric(logErrCov)
 end
 
-function crossCov(ts::AbstractVector, dim::Integer, α::Real)
+function crossCov(ts::AbstractVector, dim::Integer, α::Real, w::Integer = length(ts)-1)
 
     function crossCovEffFBM(ts, k, l, ln, α)
         K(s,t) = (α ≈ 1.0) ? 2min(s,t) : (s^α + t^α - abs(s-t)^α) 
@@ -425,8 +482,8 @@ function crossCov(ts::AbstractVector, dim::Integer, α::Real)
 
     ln = length(ts)
     S = float(eltype(ts))
-    cov = Matrix{S}(undef, ln-1, ln-1)
-    for i in 1:ln-1, j in i:ln-1
+    cov = Matrix{S}(undef, w, w)
+    for i in 1:w, j in i:w
         cov[i,j] = dim*crossCovEffFBM(ts,i,j,ln,α)
     end
 

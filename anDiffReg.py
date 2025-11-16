@@ -1,5 +1,8 @@
 import numpy as np
 from numba import njit
+from scipy.stats import multivariate_normal
+from scipy.signal import fftconvolve
+from tqdm.auto import tqdm
 
 # main functions
 
@@ -37,6 +40,7 @@ def fit_ols(tamsd, dim, dt, w=None):
     - dim: original trajectory dimension (usually 1, 2 or 3)
     - dt: sampling interval
     - w = max(5, tamsd.shape[0] // 10): window size
+
     Output:
     - ols: 2×n matrix values of (log10 D, α) estimates
     - fitCov: 2×2×n matrix with estimated parameter error covariances 
@@ -61,7 +65,7 @@ def fit_ols(tamsd, dim, dt, w=None):
 def fit_gls(tamsd, dim, dt, init_alpha, init_D = None, sigma = None, precompute=True, precompute_alphas=np.arange(0.1, 1.62, 0.02)):
     """
         fit_gls(tamsd, dim, dt, init_alpha, ...)
-        fit_gls(tamsd, dim, dt, init_alpha,, init_D, sigma, ...)
+        fit_gls(tamsd, dim, dt, init_alpha, init_D, sigma, ...)
 
     Fitting TA-MSD with the GLS method.
     Input:
@@ -72,13 +76,13 @@ def fit_gls(tamsd, dim, dt, init_alpha, init_D = None, sigma = None, precompute=
     Optional input:
     - precompute = True: if true first tabularise error covariances, if false calculate it for each trajectory
     - precompute_alphas = range(0.1,1.62,0.02): points at which precompute
-    Output:
-    - gls: 2×n matrix values of (log10 D, α) estimates
-    - errCov: 2×2×n matrix with estimated parameter error covariances 
-
     For estimation with experimental noise provide also:
     - init_D: initial approximate values of diffusivity
     - sigma: noise amplitude, X_obs = X_true + σξ
+
+    Output:
+    - gls: 2×n matrix values of (log10 D, α) estimates
+    - errCov: 2×2×n matrix with estimated parameter error covariances 
     """
     if init_D is None or sigma is None:
         return fit_gls_base(tamsd, dim, dt, init_alpha, precompute, precompute_alphas)
@@ -86,7 +90,68 @@ def fit_gls(tamsd, dim, dt, init_alpha, init_D = None, sigma = None, precompute=
         return fit_gls_noise(tamsd, dim, dt, init_alpha, init_D, sigma, precompute, precompute_alphas)
 
 
-# utility functions
+def deconvolve_gls(logDs, alphas, den, dt, ln, dim, alpha, method = "simple", nIter = 30):
+    """
+        deconvolve_gls(logDs, alphas, den, dt, ln, dim, alpha, method, nIter = 30)
+        deconvolve_gls(logDs, alphas, den, dt, ln, dim, (alpha_min,alpha_max), method, nIter = 30)
+
+    Deconvolving pdf of estimated (log10 D, α) obtained with the GLS method. It removes the blur caused by the estimation errors, reconstructing the original distribution of (log10 D, α). This method assumes the data was FBM.
+    Input:
+    - logDs: labels of log diffusivity
+    - αlphas: labels of anomalous index
+    - den: density which we want to deconvolve
+    - dt: sampling inverval
+    - ln: length of the orignal trajectory used
+    - dim: trajectory dimension (typically 1, 2 or 3)
+    - method: "simple" or "full"
+    For simple deconvolution provide:
+    - alpha: the anomalous index value for which deconvolve, should be the most representative of the sample
+    For full deconvolution provide:
+    - (alpha_min,alpha_max): range of α for which deconvolve
+    Full deconvolution is much more computationally expensive, but the result better reflects the original distribution.
+
+    Optional input:
+    - nIter = 30: number of steps in the Richardson-Lucy deconvolution algorithm
+
+    Output: matrix with the deconvolved pdf. 
+    """
+    if method == "simple":
+        return deconvolve_gls_simple(logDs, alphas, den, dt, ln, dim, alpha, nIter)
+    elif method == "full":
+        return deconvolve_gls_full(logDs, alphas, den, dt, ln, dim, alpha, nIter)
+
+def deconvolve_ols(logDs, alphas, den, dt, ln, dim, alpha, w, method = "simple", nIter = 30):
+    """
+        deconvolve_ols(logDs, alphas, den, dt, ln, dim, alpha, w, method, nIter = 30)
+        deconvolve_ols(logDs, alphas, den, dt, ln, dim, alpha, w, method, nIter = 30)
+    Deconvolving pdf of estimated (log10 D, α) obtained with the OLS method. It removes the blur caused by the estimation errors, reconstructing the original distribution of (log10 D, α). This method assumes the data was FBM.
+    Input:
+    - logDs: labels of log diffusivity
+    - alphas: labels of anomalous index
+    - den: density which we want to deconvolve
+    - dt: sampling inverval
+    - ln: length of the orignal trajectory used
+    - dim: trajectory dimension (typically 1, 2 or 3)
+    - w: size of window in which the OLS was calculated 
+    - method: "simple" or "full"
+    For simple deconvolution provide:
+    - alpha: the value for which deconvolve, should be the most typical in the sample
+    For full deconvolution provide:
+    - (alpha_min,alpha_max): range of α for which deconvolve
+    Full deconvolution is much more computationally expensive, but the result better reflects the original distribution.
+
+    Optional input:
+    - nIter = 30: number of steps in the Richardson-Lucy deconvolution algorithm
+
+    Output: matrix with the deconvolved pdf. 
+    """
+    if method == "simple":
+        return deconvolve_ols_simple(logDs, alphas, den, dt, ln, dim, alpha, w, nIter)
+    elif method == "full":
+        return deconvolve_ols_full(logDs, alphas, den, dt, ln, dim, alpha, w, nIter)
+
+
+# numerical functions
 
 @njit
 def fit_gls_base(tamsd, dim, dt, init_alpha, precompute=True, precompute_alphas=np.arange(0.1, 1.62, 0.02)):
@@ -196,8 +261,159 @@ def fit_gls_noise(tamsd, dim, dt, init_alpha, init_D, sigma, precompute=True, pr
 
     return gls, fitCov
 
+def deconvolve_internal(logDs, alphas, den, C, nIter):
+    """
+    Performs Richardson-Lucy deconvolution with Gaussian kernel given covariance C.
+    """
+    res = np.copy(den)
+    
+    mean = [logDs[len(logDs) // 2], alphas[len(alphas) // 2]]
+    mvn = multivariate_normal(mean=mean, cov=C)
+    
+    ns = np.array([[mvn.pdf([x, y]) for y in alphas] for x in logDs])
+    ins = np.flip(ns)
+
+    for _ in range(nIter):
+        d = fftconvolve(res, ns, mode = "same")
+        d[np.abs(d) < 1e-12] = 1e-12
+        res *= fftconvolve(den / d, ins, mode = "same")
+
+    return res
+
+def deconvolve_gls_simple(logDs, alphas, den, dt, ln, dim, alpha, nIter):
+    ts = dt * np.arange(1,ln+1) 
+    Ts = np.c_[np.ones(ln-1), np.log10(ts[:-1])]
+    _, Sigma = errCov(ts, dim, alpha)
+
+    return deconvolve_internal(logDs, alphas, den, np.linalg.inv(Ts.T @ np.linalg.inv(Sigma) @ Ts), nIter)
+
+def deconvolve_ols_simple(logDs, alphas, den, dt, ln, dim, alpha, w, nIter):
+    ts = dt * np.arange(1,ln+1) 
+    Ts = np.c_[np.ones(w), np.log10(ts[:w])]
+    _, Sigma = errCov(ts, dim, alpha, w)
+    S = np.linalg.inv(Ts.T @ Ts) @ Ts.T
+    return deconvolve_internal(logDs, alphas, den, S @ Sigma @ S.T, nIter)
+
+def deconvolve_gls_full(logDs, alphas, den, dt, ln, dim, alpha_range, nIter = 30):
+    alpha_min,alpha_max = alpha_range
+    ts = dt * np.arange(1,ln+1) 
+    Ts = np.c_[np.ones(ln-1), np.log10(ts[:-1])]
+    _, Sigma = errCov(ts, dim, alpha_min)
+
+    res = deconvolve_internal(logDs, alphas, den, np.linalg.inv(Ts.T @ np.linalg.inv(Sigma) @ Ts), nIter)
+
+    j1 = np.argmax(alphas >= alpha_min)
+    j2 = np.argwhere(alphas <= alpha_max).max()
+
+    for k in tqdm(range(j1,j2)):
+        _, Sigma = errCov(ts, 1, alphas[k])
+        zs = deconvolve_internal(logDs, alphas, den, np.linalg.inv(Ts.T @ np.linalg.inv(Sigma) @ Ts), nIter)
+        res[:,k] = zs[:,k]
+
+    _, Sigma = errCov(ts, 1, alpha_max )
+    zs = deconvolve_internal(logDs, alphas, den, np.linalg.inv(Ts.T @ np.linalg.inv(Sigma) @ Ts), nIter)
+
+    res[:,j2:] = zs[:,j2:]
+
+    res /= (np.sum(res)*(alphas[1]-alphas[0])*(logDs[1]-logDs[0])) # normalise
+    return res
+
+def deconvolve_ols_full(logDs, alphas, den, dt, ln, dim, alpha_range, w, nIter):
+    alpha_min,alpha_max = alpha_range
+    ts = dt * np.arange(1,ln+1) 
+    Ts = np.c_[np.ones(w), np.log10(ts[:w])]
+    _, Sigma = errCov(ts, dim, alpha_min, w)
+    S = np.linalg.inv(Ts.T @ Ts) @ Ts.T
+
+    res = deconvolve_internal(logDs, alphas, den, S @ Sigma @ S.T, nIter)
+
+    j1 = np.argmax(alphas >= alpha_min)
+    j2 = np.argwhere(alphas <= alpha_max).max()
+
+    for k in tqdm(range(j1,j2)):
+        _, Sigma = errCov(ts, 1, alphas[k], w)
+        zs = deconvolve_internal(logDs, alphas, den, S @ Sigma @ S.T, nIter)
+        res[:,k] = zs[:,k]
+
+    _, Sigma = errCov(ts, 1, alpha_max, w)
+    zs = deconvolve_internal(logDs, alphas, den, S @ Sigma @ S.T, nIter)
+
+    res[:,j2:] = zs[:,j2:]
+
+    res /= (np.sum(res)*(alphas[1]-alphas[0])*(logDs[1]-logDs[0])) # normalise
+    return res
 
 # covariance functions
+
+"""
+    cov_gls(alpha, dt, ln, dim, w, logBase = 10)
+    cov_gls(alpha, dt, ln, dim, D, sigma, w, logBase = 10)
+
+Calculating the expected covariance of the anomalous diffusion parameters GLS estimates (log D, α) given their true values.
+Input:
+- alpha: true anomalous diffusion index
+- dt: sampling inverval
+- ln: length of the orignal trajectory used
+- dim: trajectory dimension (typically 1, 2 or 3)
+- w = ln-1: size of window in which the GLS was calculated 
+- logBase = 10: logarithm base used for log TA-MSD and log diffusivity
+For the FBM with additive experimental noise provide also:
+- D: true value of the diffusivity
+- sigma: noise amplitude, X_obs = X_true + σξ
+
+Output: 2×2 matrix with the expected covariance of (log D, α)
+"""
+def cov_gls(alpha, dt, ln, dim, D = None, sigma = None, w = None, logBase = 10):
+    if D == None or sigma == None:
+        return cov_gls_base(alpha, dt, ln, dim, w, logBase)
+    else:
+        return cov_gls_noise(alpha, dt, ln, dim, D, sigma, w, logBase)
+
+def cov_gls_base(alpha, dt, ln, dim, w, logBase):
+    if w == None:
+        w = ln-1
+    ts = dt * np.arange(1,ln+1) 
+    Ts = np.c_[np.ones(w), np.log(ts[:w])/np.log(logBase)]
+    _, Sigma = errCov(ts, dim, alpha, w, logBase)
+
+    return np.linalg.inv(Ts.T @ np.linalg.inv(Sigma) @ Ts)
+
+def cov_gls_noise(alpha, dt, ln, dim, D, sigma, w, logBase):
+    if w == None:
+        w = ln-1
+    ts = dt * np.arange(1,ln+1) 
+    Ts = np.c_[np.ones(w), np.log(ts[:w])/np.log(logBase)]
+    orgC, _ = errCov(ts, dim, alpha, w, logBase)
+    crossC = crossCov(ts, dim, alpha)
+    noiseC = np.empty((ln - 1, ln - 1), dtype=np.float64) 
+    for i in range(1,ln-1):
+        for j in range(1,ln-1):
+            noiseC[i-1,j-1] = noiseCov(ln,i,j)
+            noiseC[j-1,i-1] = noiseC[i-1,j-1]
+
+    Sigma = (1 / (np.log(logBase)**2)) * (D**2 * orgC + sigma**2 * D * crossC + sigma**4 * dim * noiseC) / ((2 * D * dim * ts[:w]**alpha) * (2 * D * dim * ts[:w][:, None]**alpha))
+    return np.linalg.inv(Ts.T @ np.linalg.inv(Sigma) @ Ts)
+
+"""
+    cov_ols(alpha, dt, ln, dim, w, logBase = 10)
+Calculating the expected covariance of the anomalous diffusion parameters OLS estimates (log D, α) given their true values.
+Input:
+- alpha: true anomalous diffusion index
+- dt: sampling inverval
+- ln: length of the orignal trajectory used
+- dim: trajectory dimension (typically 1, 2 or 3)
+- w: size of window in which the OLS was calculated 
+- logBase = 10: logarithm base used for log TA-MSD and log diffusivity
+
+Output: 2×2 matrix with the expected covariance of (log D, α)
+"""
+def cov_ols(alpha, dt, ln, dim, w, logBase = 10):
+    ts = dt * np.arange(1,ln+1) 
+    Ts = np.c_[np.ones(w), np.log(ts[:w])/np.log(logBase)]
+    _, Sigma = errCov(ts, dim, alpha, w, logBase)
+    S = np.linalg.inv(Ts.T @ Ts) @ Ts.T
+    return S @ Sigma @ S.T
+
 
 @njit
 def theorCovEff(ts, k, l, ln, alpha):
@@ -216,7 +432,7 @@ def theorCovEff(ts, k, l, ln, alpha):
     return 2 / ((ln - k) * (ln - l)) * (S1 + S2)
 
 @njit
-def errCov(ts, dim, alpha, w=None, logBase=10):
+def errCov(ts, dim, alpha, w = None, logBase = 10):
     """
     Covariance matrix of errors of TA-MSD and log TA-MSD. Data is assumed to come from FBM, D = 1. Labels ts correspond to the original trajectory.
     """
@@ -257,11 +473,13 @@ def crossCovEff(ts, k, l, ln, alpha):
     return 4 / ((ln - k) * (ln - l)) * (S1 + S2)
 
 @njit
-def crossCov(ts, dim, alpha):
+def crossCov(ts, dim, alpha, w = None):
     ln = len(ts)
-    cov = np.empty((ln - 1, ln - 1), dtype=np.float64)
-    for i in range(1, ln):
-        for j in range(i, ln):
+    if w == None:
+        w = ln-1
+    cov = np.empty((w, w), dtype=np.float64)
+    for i in range(1, w+1):
+        for j in range(i, w+1):
             cov[i - 1, j - 1] = dim * crossCovEff(ts, i, j, ln, alpha)
             cov[j - 1, i - 1] = cov[i - 1, j - 1]
 
