@@ -4,7 +4,8 @@ anomalous single particle trajectories" implemented in Julia and Python. Julia v
 
 Main functions are in **AnDiffReg.jl** (Julia) or **anDiffReg.py** (Python) files, the most important ones are:
 - `tamsd` for calculating TA-MSD,
-- `fit_ols`, `fit_gls` for obtaining diffusivity and anomalous diffusion index estimates together with their prediced covariance matrices. 
+- `fit_ols`, `fit_gls` for obtaining diffusivity and anomalous diffusion index estimates together with their prediced covariance matrices,
+- `cov_ols`, `cov_gls` for calculating expected covariance of the anomalous diffusion parameters estimates given their true values. 
 
 See `?` in Julia or `help` in Python for more details. These methods work for TA-MSD of FBM trajectories in any dimension. The effect of additive noise can be included if its standard deviation is known. Scripts **exemplaryFitting** show how the basic TA-MSD fitting and analysis could look like.
 
