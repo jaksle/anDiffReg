@@ -98,7 +98,7 @@ def deconvolve_gls(logDs, alphas, den, dt, ln, dim, alpha, method = "simple", nI
     Deconvolving pdf of estimated (log10 D, α) obtained with the GLS method. It removes the blur caused by the estimation errors, reconstructing the original distribution of (log10 D, α). This method assumes the data was FBM.
     Input:
     - logDs: labels of log diffusivity
-    - αlphas: labels of anomalous index
+    - alphas: labels of anomalous index
     - den: density which we want to deconvolve
     - dt: sampling inverval
     - ln: length of the orignal trajectory used
@@ -345,25 +345,25 @@ def deconvolve_ols_full(logDs, alphas, den, dt, ln, dim, alpha_range, w, nIter):
 
 # covariance functions
 
-"""
+def cov_gls(alpha, dt, ln, dim, D = None, sigma = None, w = None, logBase = 10):
+    """
     cov_gls(alpha, dt, ln, dim, w, logBase = 10)
     cov_gls(alpha, dt, ln, dim, D, sigma, w, logBase = 10)
 
-Calculating the expected covariance of the anomalous diffusion parameters GLS estimates (log D, α) given their true values.
-Input:
-- alpha: true anomalous diffusion index
-- dt: sampling inverval
-- ln: length of the orignal trajectory used
-- dim: trajectory dimension (typically 1, 2 or 3)
-- w = ln-1: size of window in which the GLS was calculated 
-- logBase = 10: logarithm base used for log TA-MSD and log diffusivity
-For the FBM with additive experimental noise provide also:
-- D: true value of the diffusivity
-- sigma: noise amplitude, X_obs = X_true + σξ
+    Calculating the expected covariance of the anomalous diffusion parameters GLS estimates (log D, α) given their true values.
+    Input:
+    - alpha: true anomalous diffusion index
+    - dt: sampling inverval
+    - ln: length of the orignal trajectory used
+    - dim: trajectory dimension (typically 1, 2 or 3)
+    - w = ln-1: size of window in which the GLS was calculated 
+    - logBase = 10: logarithm base used for log TA-MSD and log diffusivity
+    For the FBM with additive experimental noise provide also:
+    - D: true value of the diffusivity
+    - sigma: noise amplitude, X_obs = X_true + σξ
 
-Output: 2×2 matrix with the expected covariance of (log D, α)
-"""
-def cov_gls(alpha, dt, ln, dim, D = None, sigma = None, w = None, logBase = 10):
+    Output: 2×2 matrix with the expected covariance of (log D, α)
+    """
     if D == None or sigma == None:
         return cov_gls_base(alpha, dt, ln, dim, w, logBase)
     else:
@@ -394,20 +394,20 @@ def cov_gls_noise(alpha, dt, ln, dim, D, sigma, w, logBase):
     Sigma = (1 / (np.log(logBase)**2)) * (D**2 * orgC + sigma**2 * D * crossC + sigma**4 * dim * noiseC) / ((2 * D * dim * ts[:w]**alpha) * (2 * D * dim * ts[:w][:, None]**alpha))
     return np.linalg.inv(Ts.T @ np.linalg.inv(Sigma) @ Ts)
 
-"""
-    cov_ols(alpha, dt, ln, dim, w, logBase = 10)
-Calculating the expected covariance of the anomalous diffusion parameters OLS estimates (log D, α) given their true values.
-Input:
-- alpha: true anomalous diffusion index
-- dt: sampling inverval
-- ln: length of the orignal trajectory used
-- dim: trajectory dimension (typically 1, 2 or 3)
-- w: size of window in which the OLS was calculated 
-- logBase = 10: logarithm base used for log TA-MSD and log diffusivity
-
-Output: 2×2 matrix with the expected covariance of (log D, α)
-"""
 def cov_ols(alpha, dt, ln, dim, w, logBase = 10):
+    """
+        cov_ols(alpha, dt, ln, dim, w, logBase = 10)
+    Calculating the expected covariance of the anomalous diffusion parameters OLS estimates (log D, α) given their true values.
+    Input:
+    - alpha: true anomalous diffusion index
+    - dt: sampling inverval
+    - ln: length of the orignal trajectory used
+    - dim: trajectory dimension (typically 1, 2 or 3)
+    - w: size of window in which the OLS was calculated 
+    - logBase = 10: logarithm base used for log TA-MSD and log diffusivity
+
+    Output: 2×2 matrix with the expected covariance of (log D, α)
+    """
     ts = dt * np.arange(1,ln+1) 
     Ts = np.c_[np.ones(w), np.log(ts[:w])/np.log(logBase)]
     _, Sigma = errCov(ts, dim, alpha, w, logBase)
