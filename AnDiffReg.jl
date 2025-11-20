@@ -36,9 +36,63 @@ function tamsd(X::AbstractVector{T}) where {T <: Real}
 end
 
 """
-    fit_ols(tamsd::AbstractMatrix, dim::Integer, Δt::Real, w::Integer)
+    fit_ols(tamsd::AbstractMatrix, dim::Integer, Δt::Real, w::Integer; ...)
 
 Fitting TA-MSD with the OLS method.
+Input:
+- tamsd: (ln-1)×n  matrix containing the entire TA-MSDs of the n length ln sample trajectories
+- dim: original trajectory dimension (usually 1, 2 or 3)
+- Δt: sampling interval
+- w = max(5,size(tamsd)[1]÷10): window size
+Keyword input:
+- precompute = true: if true first tabularise error covariances, if false calculate it for each trajectory
+- precompute_alphas = 0.1:0.02:1.6: points at which precompute
+
+Output:
+- ols: 2×n matrix values of (log10, α) estimates
+- fitCov: 2×2×n matrix with estimated parameter error covariances 
+
+If fitCov is not needed quicker fit_ols_simple can be used instead.
+"""
+function fit_ols(tamsd::AbstractMatrix, dim::Integer, Δt::Real, w::Integer = max(5,size(tamsd)[1]÷10);
+     precompute::Bool = true,
+     precompute_alphas::AbstractVector = 0.1:0.02:1.6
+	 )
+    ln, n = size(tamsd)
+    ts = Δt*(1:ln)
+    Ts = [ones(w) log10.(ts[1:w])]
+    S = (Ts'*Ts)^-1 * Ts'
+    ols = S * log10.(tamsd[1:w,:])
+    ols[1,:] .-= log10(2dim)
+	
+	fitCov = Array{Float64}(undef, 2, 2, n)
+	if precompute
+		na = length(precompute_alphas)
+	    errC = Array{Float64}(undef,ln-1,ln-1,na)
+
+        @showprogress for k in 1:na
+            errC[:,:,k] .= errCov(ts, dim, precompute_alphas[k])[2]
+        end
+
+        # estimate
+        @showprogress for i in 1:n
+            j0 = argmin(abs.(precompute_alphas .- ols[2,i]))
+            fitCov[:,:,i] .= S*errC[:,:,j0]*S'
+        end
+	else
+		@showprogress for i in 1:n
+			_, Σ = errCov(ts, dim, ols[2,i], w)
+			fitCov[:,:,i] = S*Σ*S'
+		end
+	end
+
+    return ols, fitCov
+end
+
+"""
+    fit_ols_simple(tamsd::AbstractMatrix, dim::Integer, Δt::Real, w::Integer)
+
+Fitting TA-MSD with the OLS method. Does not estimate covariance matrix.
 Input:
 - tamsd: (ln-1)×n  matrix containing the entire TA-MSDs of the n length ln sample trajectories
 - dim: original trajectory dimension (usually 1, 2 or 3)
@@ -47,9 +101,8 @@ Input:
 
 Output:
 - ols: 2×n matrix values of (log10, α) estimates
-- fitCov: 2×2×n matrix with estimated parameter error covariances 
 """
-function fit_ols(tamsd::AbstractMatrix, dim::Integer, Δt::Real, w::Integer = max(5,size(tamsd)[1]÷10))
+function fit_ols_simple(tamsd::AbstractMatrix, dim::Integer, Δt::Real, w::Integer = max(5,size(tamsd)[1]÷10))
     ln, n = size(tamsd)
     ts = Δt*(1:ln)
     Ts = [ones(w) log10.(ts[1:w])]
@@ -57,14 +110,9 @@ function fit_ols(tamsd::AbstractMatrix, dim::Integer, Δt::Real, w::Integer = ma
     ols = S * log10.(tamsd[1:w,:])
     ols[1,:] .-= log10(2dim)
 
-    fitCov = Array{Float64}(undef, 2, 2, n)
-    @showprogress for i in 1:n
-        _, Σ = errCov(ts, dim, ols[2,i], w)
-        fitCov[:,:,i] = S*Σ*S'
-    end
-
-    return ols, fitCov
+    return ols
 end
+
 
 """
     fit_gls(tamsd::AbstractMatrix, dim::Integer, Δt::Real, init_α::AbstractVector; ...)
@@ -78,7 +126,7 @@ Input:
 - init_α: vector with initial approximate values of anomalous exponent
 Keyword input:
 - precompute = true: if true first tabularise error covariances, if false calculate it for each trajectory
-- precompute_αs = 0.1:0.02:1.6: points at which precompute
+- precompute_alphas = 0.1:0.02:1.6: points at which precompute
 For estimation with experimental noise provide also:
 - init_D: vector with initial approximate values of diffusivity
 - σ: noise amplitude, X_obs = X_true + σξ
