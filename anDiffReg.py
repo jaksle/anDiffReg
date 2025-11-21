@@ -30,20 +30,24 @@ def tamsd(X):
     return msd
 
 @njit
-def fit_ols(tamsd, dim, dt, w=None):
+def fit_ols(tamsd, dim, dt, w=None, precompute=True, precompute_alphas=np.arange(0.1, 1.62, 0.02)):
     """
-        fit_ols(tamsd, dim, dt, w)
+        fit_ols(tamsd, dim, dt, w, ...)
 
     Fitting TA-MSD with the OLS method.
     Input:
-    - tamsd: (ln-1)×n  matrix containing the entire TA-MSDs of the n length ln sample trajectories
+    - tamsd: (ln-1)×n  matrix containing the entire TA-MSD of the n length ln sample trajectories
     - dim: original trajectory dimension (usually 1, 2 or 3)
     - dt: sampling interval
     - w = max(5, tamsd.shape[0] // 10): window size
+    - precompute = True: if true first tabularise error covariances, if false calculate it for each trajectory
+    - precompute_alphas = range(0.1,1.62,0.02): points at which precompute
 
     Output:
     - ols: 2×n matrix values of (log10 D, α) estimates
-    - fitCov: 2×2×n matrix with estimated parameter error covariances 
+    - fitCov: 2×2×n matrix with estimated parameter error covariances
+
+    If fitCov is not needed quicker fit_ols_simple can be used instead.
     """
     ln, n = tamsd.shape
     if w is None:
@@ -56,11 +60,49 @@ def fit_ols(tamsd, dim, dt, w=None):
     ols[0, :] -= np.log10(2 * dim)
 
     fitCov = np.empty((2, 2, n), dtype=np.float64)
-    for i in range(n):
-        _, Sigma = errCov(ts, dim, ols[1,i], w)
-        fitCov[:,:,i] = S @ Sigma @ S.T
+    if precompute: # precompute covariances first
+            na = len(precompute_alphas)
+            errC = np.empty((w, w, na), dtype=np.float64)
+
+            for (k, a) in enumerate(precompute_alphas):
+                errC[:, :, k] = errCov(ts, dim, a, w)[1]
+
+            for i in range(n):
+                j0 = np.argmin(np.abs(precompute_alphas - ols[1,i]))
+                fitCov[:, :, i] = S @ errC[:, :, j0] @ S.T
+    else:
+        for i in range(n):
+            _, Sigma = errCov(ts, dim, ols[1,i], w)
+            fitCov[:,:,i] = S @ Sigma @ S.T
 
     return ols, fitCov
+
+@njit
+def fit_ols_simple(tamsd, dim, dt, w=None):
+    """
+        fit_ols_simple(tamsd, dim, dt, w)
+
+    Fitting TA-MSD with the OLS method. Does not estimate covariance matrix.
+    Input:
+    - tamsd: (ln-1)×n  matrix containing the entire TA-MSD of the n length ln sample trajectories
+    - dim: original trajectory dimension (usually 1, 2 or 3)
+    - dt: sampling interval
+    - w = max(5, tamsd.shape[0] // 10): window size
+
+    Output:
+    - ols: 2×n matrix values of (log10, α) estimates
+    """
+    ln, n = tamsd.shape
+    if w is None:
+        w = max(5, ln // 10)
+    
+    Ts = np.column_stack((np.ones(w), np.log10( dt * np.arange(1, w+1))))
+    S = np.linalg.inv(Ts.T @ Ts) @ Ts.T
+    ols = S @ np.log10(tamsd[:w, :])
+    ols[0, :] -= np.log10(2 * dim)
+
+    return ols
+
 
 def fit_gls(tamsd, dim, dt, init_alpha, init_D = None, sigma = None, precompute=True, precompute_alphas=np.arange(0.1, 1.62, 0.02)):
     """
@@ -69,7 +111,7 @@ def fit_gls(tamsd, dim, dt, init_alpha, init_D = None, sigma = None, precompute=
 
     Fitting TA-MSD with the GLS method.
     Input:
-    - tamsd: ln-1×n  matrix containing the entire TA-MSDs of the n length ln sample trajectories
+    - tamsd: ln-1×n  matrix containing the entire TA-MSD of the n length ln sample trajectories
     - dim: original trajectory dimension (usually 1, 2 or 3)
     - dt: sampling interval
     - init_alpha: vector with initial approximate values of anomalous exponent
@@ -169,8 +211,8 @@ def fit_gls_base(tamsd, dim, dt, init_alpha, precompute=True, precompute_alphas=
         iC = np.empty((ln - 1, ln - 1, na), dtype=np.float64)
         bias = np.empty((ln - 1, na), dtype=np.float64)
 
-        for k in range(na):
-            c = errCov(ts, dim, precompute_alphas[k])[1]
+        for (k, a) in enumerate(precompute_alphas):
+            c = errCov(ts, dim, a)[1]
             errC[:, :, k] = c
             bias[:, k] = -np.log(10) * np.diag(c) / 2
             iC[:, :, k] = np.linalg.inv(c)
@@ -218,9 +260,9 @@ def fit_gls_noise(tamsd, dim, dt, init_alpha, init_D, sigma, precompute=True, pr
         orgC = np.empty((ln - 1, ln - 1, na), dtype=np.float64)  # pure FBM, no noise, no log scale
         crossC = np.empty((ln - 1, ln - 1, na), dtype=np.float64)  # cross term in cov
 
-        for k in range(na):
-            orgC[:, :, k] = errCov(ts, dim, precompute_alphas[k])[0]
-            crossC[:, :, k] = crossCov(ts, dim, precompute_alphas[k])
+        for (k, a) in enumerate(precompute_alphas):
+            orgC[:, :, k] = errCov(ts, dim, a)[0]
+            crossC[:, :, k] = crossCov(ts, dim, a)
 
         for i in range(n):
             α0, D0 = init_alpha[i], init_D[i]

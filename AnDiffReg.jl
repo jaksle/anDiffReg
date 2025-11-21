@@ -3,7 +3,7 @@ module AnDiffReg
 using Statistics, Distributions, LinearAlgebra, FFTW
 using ProgressMeter
 
-export tamsd, fit_ols, fit_gls, cov_ols, cov_gls, deconvolve_ols, deconvolve_gls
+export tamsd, fit_ols, fit_ols_simple, fit_gls, cov_ols, cov_gls, deconvolve_ols, deconvolve_gls
 
 """
 TA-MSD of trajectories. Time should go along first axis, subsequent trajectories along second axis, x, y, z coordinates along third axis.
@@ -40,7 +40,7 @@ end
 
 Fitting TA-MSD with the OLS method.
 Input:
-- tamsd: (ln-1)×n  matrix containing the entire TA-MSDs of the n length ln sample trajectories
+- tamsd: (ln-1)×n  matrix containing the entire TA-MSD of the n length ln sample trajectories
 - dim: original trajectory dimension (usually 1, 2 or 3)
 - Δt: sampling interval
 - w = max(5,size(tamsd)[1]÷10): window size
@@ -68,10 +68,10 @@ function fit_ols(tamsd::AbstractMatrix, dim::Integer, Δt::Real, w::Integer = ma
 	fitCov = Array{Float64}(undef, 2, 2, n)
 	if precompute
 		na = length(precompute_alphas)
-	    errC = Array{Float64}(undef,ln-1,ln-1,na)
+	    errC = Array{Float64}(undef, w, w,na)
 
         @showprogress for k in 1:na
-            errC[:,:,k] .= errCov(ts, dim, precompute_alphas[k])[2]
+            errC[:,:,k] .= errCov(ts, dim, precompute_alphas[k], w)[2]
         end
 
         # estimate
@@ -94,7 +94,7 @@ end
 
 Fitting TA-MSD with the OLS method. Does not estimate covariance matrix.
 Input:
-- tamsd: (ln-1)×n  matrix containing the entire TA-MSDs of the n length ln sample trajectories
+- tamsd: (ln-1)×n  matrix containing the entire TA-MSD of the n length ln sample trajectories
 - dim: original trajectory dimension (usually 1, 2 or 3)
 - Δt: sampling interval
 - w = max(5,size(tamsd)[1]÷10): window size
@@ -120,7 +120,7 @@ end
 
 Fitting TA-MSD with the GLS method.
 Input:
-- tamsd: ln-1×n  matrix containing the entire TA-MSDs of the n length ln sample trajectories
+- tamsd: ln-1×n  matrix containing the entire TA-MSD of the n length ln sample trajectories
 - dim: original trajectory dimension (usually 1, 2 or 3)
 - Δt: sampling interval
 - init_α: vector with initial approximate values of anomalous exponent
