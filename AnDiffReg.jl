@@ -30,7 +30,7 @@ function tamsd(X::AbstractVector{T}) where {T <: Real}
     ln =  length(X)
     msd = Vector{T}(undef, ln-1)
     for i in 1:ln-1
-        msd[i] = mean((X[k,j] - X[k+i,j])^2 for k in 1:ln-i)
+        msd[i] = mean((X[k] - X[k+i])^2 for k in 1:ln-i)
     end
     return msd
 end
@@ -551,6 +551,7 @@ function noiseCov(ln,k,l)
         return 4/((ln-k)*(ln-l)) * ( (ln >= k+l) ? ( 2ln-k-2l) : (ln-l) )
     end
 end
+
 
 
 end
