@@ -511,9 +511,9 @@ end
 
 
 """
-Covariance matrix of errors of TA-MSD and log TA-MSD. Data is assumed to come from FBM, D = 1. Labels ts correspond to the original trajectory.
+Non-allocating version of the error covariance calculation. It is much slower.
 """
-function errCov(ts::AbstractVector, dim::Integer, α::Real, w::Integer = length(ts)-1,  logBase::Real = 10)
+function errCovNonAlloc(ts::AbstractVector, dim::Integer, α::Real, w::Integer = length(ts)-1,  logBase::Real = 10)
 
     ln = length(ts)
     S = float(eltype(ts))
@@ -532,7 +532,7 @@ end
 """
 Covariance matrix of errors of TA-MSD and log TA-MSD. Data is assumed to come from FBM, D = 1. Labels ts correspond to the original trajectory.
 """
-function errCov2(ts::AbstractVector, dim::Integer, α::Real, w::Integer = length(ts)-1,  logBase::Real = 10)
+function errCov(ts::AbstractVector, dim::Integer, α::Real, w::Integer = length(ts)-1,  logBase::Real = 10)
 
     ln = length(ts)
     S = float(eltype(ts))
@@ -541,9 +541,10 @@ function errCov2(ts::AbstractVector, dim::Integer, α::Real, w::Integer = length
 
     K(s,t) = (α ≈ 1.0) ? 2min(s,t) : (s^α + t^α - abs(s-t)^α)
     cFBM = Matrix{S}(undef, ln, ln)
-    for i in 1:ln, j in i:ln # tabularise cov matrix of the trajectory
+    for i in 1:ln, j in i:ln # tabularise cov matrix of the FBM trajectory
         cFBM[i,j] = K(ts[i],ts[j])
     end
+    cFBM = Symmetric(cFBM)
 
     for i in 1:w, j in i:w
         c = theorCovEff(i,j,ln,cFBM)
@@ -555,7 +556,7 @@ function errCov2(ts::AbstractVector, dim::Integer, α::Real, w::Integer = length
 end
 
 
-function crossCov(ts::AbstractVector, dim::Integer, α::Real, w::Integer = length(ts)-1)
+function crossCovNonAlloc(ts::AbstractVector, dim::Integer, α::Real, w::Integer = length(ts)-1)
 
     function crossCovEffFBM(ts, k, l, ln, α)
         K(s,t) = (α ≈ 1.0) ? 2min(s,t) : (s^α + t^α - abs(s-t)^α) 
@@ -581,6 +582,34 @@ function crossCov(ts::AbstractVector, dim::Integer, α::Real, w::Integer = lengt
 
     return Symmetric(cov)
 end
+
+function crossCov(ts::AbstractVector, dim::Integer, α::Real, w::Integer = length(ts)-1)
+    ln = length(ts)
+    S = float(eltype(ts))
+    cov = Matrix{S}(undef, w, w)
+    K(s,t) = (α ≈ 1.0) ? 2min(s,t) : (s^α + t^α - abs(s-t)^α)
+    cFBM = Matrix{S}(undef, ln, ln)
+    for i in 1:ln, j in i:ln # tabularise cov matrix of the FBM trajectory
+        cFBM[i,j] = K(ts[i],ts[j])
+    end
+    cFBM = Symmetric(cFBM)
+
+    for k in 1:w, l in k:w
+        S1 = 0.
+        @simd for h in 2:ln-l
+            S1 += (ln-l-h+1) * incrCov(1,h,k,l,cFBM)*(==(1,h) + ==(1+k,h+l) - ==(1,h+l) - ==(1+k,h))
+        end
+        S2 = 0.
+        @simd for h in 1:ln-k 
+            S2 += ((h <= l-k+1) ? ( ln-l ) : ( ln-k-h+1 )) * incrCov(h,1,k,l,cFBM)*(==(h,1) + ==(h+k,1+l) - ==(h,1+l) - ==(h+k,1))
+        end
+        c = 4/((ln-k)*(ln-l)) * (S1 + S2)
+        cov[k,l] = dim*c
+    end
+
+    return Symmetric(cov)
+end
+
 
 """
 Covariance of 1D iid noise TA-MSD
