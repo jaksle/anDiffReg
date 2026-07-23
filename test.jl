@@ -3,9 +3,10 @@ using .AnDiffReg
 
 ts = 1:100
 ln = 100
+alpha = 0.8
 
-C1,L1 = AnDiffReg.errCovNonAlloc(ts, 2, 0.4, 50)
-C2, L2 = AnDiffReg.errCov(ts, 2, 0.4, 50)
+C1,L1 = AnDiffReg.errCovNonAlloc(ts, 2, alpha, 50)
+C2, L2 = AnDiffReg.errCov(ts, 2, alpha, 50)
 
 D1 = AnDiffReg.crossCovNonAlloc(ts, 2, 0.4, 50)
 D2 = AnDiffReg.crossCov(ts, 2, 0.4, 50)

@@ -458,7 +458,7 @@ def cov_ols(alpha, dt, ln, dim, w, logBase = 10):
 
 
 @njit
-def theorCovEff(ts, k, l, ln, alpha):
+def theorCovEff(ts, k, l, ln, alpha): # non-tabularised ver
     K = lambda s, t: 2 * np.minimum(s, t) if np.abs(alpha - 1.0) < 1e-8 else (s**alpha + t**alpha - np.abs(s - t)**alpha)
     if k > l:
         k, l = l, k
@@ -474,6 +474,43 @@ def theorCovEff(ts, k, l, ln, alpha):
     return 2 / ((ln - k) * (ln - l)) * (S1 + S2)
 
 @njit
+def theorCovEffMtx(k, l, ln, C): # uses tabularised covariance matrix C
+    if k > l:
+        k, l = l, k
+    N1 = lambda h,k,l,ln: ln - l - h + 1
+    N2 = lambda h,k,l,ln: (ln - l) if h <= l - k + 1 else (ln - k - h + 1)
+
+    S1 = 0.
+    for h in range(2, ln - l + 1):
+        S1 += N1(h,k,l,ln) * (C[0,h-1] + C[k, h+l-1] - C[0, h+l-1] - C[k, h-1])**2
+    S2 = 0.
+    for  h in range(1, ln - k + 1):
+        S2 += N2(h,k,l,ln) * (C[h-1, 0] + C[h+k-1, l] - C[h-1, l] - C[h+k-1, 0])**2
+    return 2 / ((ln - k) * (ln - l)) * (S1 + S2)
+
+@njit
+def errCovNonAlloc(ts, dim, alpha, w = None, logBase = 10):
+    """
+    Non-allocating version of the error covariance calculation. It is much slower.
+    """
+    K = lambda s, t: 2 * np.minimum(s, t) if np.abs(alpha - 1.0) < 1e-8 else (s**alpha + t**alpha - np.abs(s - t)**alpha)
+    
+    ln = len(ts)
+    if w == None:
+        w = ln - 1
+    errC = np.empty((w, w), dtype=np.float64)
+    logErrCov = np.empty((w, w), dtype=np.float64)
+    for i in range(w):
+        for j in range(i, w):
+            c = theorCovEff(ts, i + 1, j + 1, ln, alpha) 
+            errC[i, j] = dim * c
+            logErrCov[i, j] = c / (dim * K(ts[i], ts[i]) * K(ts[j], ts[j]) * (np.log(logBase) ** 2))
+            errC[j, i] = errC[i, j]
+            logErrCov[j, i] = logErrCov[i, j]
+
+    return errC, logErrCov
+
+@njit
 def errCov(ts, dim, alpha, w = None, logBase = 10):
     """
     Covariance matrix of errors of TA-MSD and log TA-MSD. Data is assumed to come from FBM, D = 1. Labels ts correspond to the original trajectory.
@@ -485,16 +522,23 @@ def errCov(ts, dim, alpha, w = None, logBase = 10):
         w = ln - 1
     errC = np.empty((w, w), dtype=np.float64)
     logErrCov = np.empty((w, w), dtype=np.float64)
+    cFBM = np.empty((ln, ln), dtype=np.float64)
+    for i in range(ln):
+        for j in range(i,ln):
+            cFBM[i,j] = K(ts[i],ts[j])
+            cFBM[j,i] = cFBM[i,j]
+
 
     for i in range(w):
         for j in range(i, w):
-            c = theorCovEff(ts, i + 1, j + 1, ln, alpha) 
+            c = theorCovEffMtx(i + 1, j + 1, ln, cFBM) 
             errC[i, j] = dim * c
             logErrCov[i, j] = c / (dim * K(ts[i], ts[i]) * K(ts[j], ts[j]) * (np.log(logBase) ** 2))
             errC[j, i] = errC[i, j]
             logErrCov[j, i] = logErrCov[i, j]
 
     return errC, logErrCov
+
 
 @njit
 def crossCovEff(ts, k, l, ln, alpha):
@@ -515,7 +559,24 @@ def crossCovEff(ts, k, l, ln, alpha):
     return 4 / ((ln - k) * (ln - l)) * (S1 + S2)
 
 @njit
-def crossCov(ts, dim, alpha, w = None):
+def crossCovEffMtx(k, l, ln, C):
+    if k > l:
+        k, l = l, k
+    N1 = lambda h: ln - l - h + 1
+    N2 = lambda h: (ln - l) if h <= l - k + 1 else (ln - k - h + 1)
+
+    S1 = 0.
+    for h in range(2, ln - l + 1):
+        S1 += N1(h) * ( C[0, h-1] + C[k, h+l-1] - C[0, h+l-1] - C[k, h-1] ) * ((h == 1) + (1 + k == h + l) - (1 == h + l) - (1 + k == h) ) 
+    
+    S2 = 0.
+    for h in range(1, ln - k + 1):
+        S2 += N2(h) * ( C[h-1, 0] + C[h+k-1, l] - C[h-1, l] - C[h+k-1, 0] ) * ((h == 1) + (h + k == 1 + l) - (h == 1 + l) - (h + k == 1)) 
+
+    return 4 / ((ln - k) * (ln - l)) * (S1 + S2)
+
+@njit
+def crossCovNonAlloc(ts, dim, alpha, w = None):
     ln = len(ts)
     if w == None:
         w = ln-1
@@ -523,6 +584,27 @@ def crossCov(ts, dim, alpha, w = None):
     for i in range(1, w+1):
         for j in range(i, w+1):
             cov[i - 1, j - 1] = dim * crossCovEff(ts, i, j, ln, alpha)
+            cov[j - 1, i - 1] = cov[i - 1, j - 1]
+
+    return cov
+
+@njit
+def crossCov(ts, dim, alpha, w = None):
+    K = lambda s, t: 2 * np.minimum(s, t) if np.abs(alpha - 1.0) < 1e-8 else (s**alpha + t**alpha - np.abs(s - t)**alpha)
+    ln = len(ts)
+    if w == None:
+        w = ln-1
+
+    cov = np.empty((w, w), dtype=np.float64)
+    cFBM = np.empty((ln, ln), dtype=np.float64)
+    for i in range(ln):
+        for j in range(i,ln):
+            cFBM[i,j] = K(ts[i],ts[j])
+            cFBM[j,i] = cFBM[i,j]
+
+    for i in range(1, w+1):
+        for j in range(i, w+1):
+            cov[i - 1, j - 1] = dim * crossCovEffMtx(i, j, ln, cFBM)
             cov[j - 1, i - 1] = cov[i - 1, j - 1]
 
     return cov
