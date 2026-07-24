@@ -466,7 +466,7 @@ def theorCovEff(ts, k, l, ln, alpha): # non-tabularised ver
     N2 = lambda h,k,l,ln: (ln - l) if h <= l - k + 1 else (ln - k - h + 1)
 
     S1 = 0.
-    for h in range(2, ln - l + 1):
+    for h in range(2, ln - l + 1): # careful: ts[0]=dt moves index up 
         S1 += N1(h,k,l,ln) * (K(ts[0], ts[h-1]) + K(ts[0] + ts[k-1], ts[h-1] + ts[l-1]) - K(ts[0], ts[h-1] + ts[l-1]) - K(ts[0] + ts[k-1], ts[h-1]))**2
     S2 = 0.
     for  h in range(1, ln - k + 1):
@@ -501,7 +501,7 @@ def errCovNonAlloc(ts, dim, alpha, w = None, logBase = 10):
     errC = np.empty((w, w), dtype=np.float64)
     logErrCov = np.empty((w, w), dtype=np.float64)
     for i in range(w):
-        for j in range(i, w):
+        for j in range(i, w): 
             c = theorCovEff(ts, i + 1, j + 1, ln, alpha) 
             errC[i, j] = dim * c
             logErrCov[i, j] = c / (dim * K(ts[i], ts[i]) * K(ts[j], ts[j]) * (np.log(logBase) ** 2))
@@ -533,7 +533,7 @@ def errCov(ts, dim, alpha, w = None, logBase = 10):
         for j in range(i, w):
             c = theorCovEffMtx(i + 1, j + 1, ln, cFBM) 
             errC[i, j] = dim * c
-            logErrCov[i, j] = c / (dim * K(ts[i], ts[i]) * K(ts[j], ts[j]) * (np.log(logBase) ** 2))
+            logErrCov[i, j] = c / (dim * cFBM[i,i] * cFBM[j,j] * (np.log(logBase) ** 2))
             errC[j, i] = errC[i, j]
             logErrCov[j, i] = logErrCov[i, j]
 
@@ -549,7 +549,7 @@ def crossCovEff(ts, k, l, ln, alpha):
     N2 = lambda h: (ln - l) if h <= l - k + 1 else (ln - k - h + 1)
 
     S1 = 0.
-    for h in range(2, ln - l + 1):
+    for h in range(2, ln - l + 1): # careful: ts[0]=dt moves index up 
         S1 += N1(h) * ( K(ts[0], ts[h-1]) + K(ts[0] + ts[k-1], ts[h-1] + ts[l-1]) - K(ts[0], ts[h-1] + ts[l-1]) - K(ts[0] + ts[k-1], ts[h-1]) ) * ((h == 1) + (1 + k == h + l) - (1 == h + l) - (1 + k == h) ) 
     
     S2 = 0.
