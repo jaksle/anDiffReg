@@ -454,15 +454,17 @@ function cov_ols(α::Real, Δt::Real, ln::Integer, dim::Integer, w::Integer, log
     return S*Σ*S'
 end
 
-function incrCov(ts,i,j,k,l,K) 
+function incrCov(ts,i,j,k,l,K::Function) 
     a, b, c, d = ts[i], ts[j], ts[k], ts[l]
     K(a,b) + K(a+c,b+d) - K(a,b+d) - K(a+c,b)
 end
 
+incrCov(i,j,k,l,C::AbstractMatrix) = C[i,j] + C[i+k,j+l] - C[i,j+l] - C[i+k,j] # C must contain cov mtx spaced uniformly
+
 """
 Covariance betweeen points ts[k] and ts[l] of TA-MSD calculated from trajectory with covariance function K = K(s,t).
 """ 
-function theorCovEff(ts,k,l,ln,K)
+function theorCovEff(ts,k,l,ln,K::Function)
     if k > l
         k, l = l, k
     end
@@ -473,6 +475,21 @@ function theorCovEff(ts,k,l,ln,K)
           sum(N1(h)*incrCov(ts,1,h,k,l,K)^2 for h in 2:ln-l; init=0) 
         + sum( N2(h)*incrCov(ts,h,1,k,l,K)^2 for h in 1:ln-k ) )
 end
+
+function theorCovEff(k,l,ln,C::AbstractMatrix) 
+    k, l = minmax(k, l)
+    S = eltype(C)
+    S1 = zero(S)
+    @simd for h in 2:ln-l
+        S1 += (ln-l-h+1) * incrCov(1,h,k,l,C)^2
+    end
+    S2 = zero(S)
+    @simd for h in 1:ln-k 
+        S2 += ((h <= l-k+1) ? ( ln-l ) : ( ln-k-h+1 )) * incrCov(h,1,k,l,C)^2
+    end
+    return  2/((ln-k)*(ln-l)) * (S1 + S2)
+end
+
 
 """
 Specialised TA-MSD covariance for FBM.
@@ -492,10 +509,11 @@ function theorCovEffFBM(ts,k,l,ln,α)
     return  2/((ln-k)*(ln-l)) * (S1 + S2)
 end
 
+
 """
-Covariance matrix of errors of TA-MSD and log TA-MSD. Data is assumed to come from FBM, D = 1. Labels ts correspond to the original trajectory.
+Non-allocating version of the error covariance calculation. It is much slower.
 """
-function errCov(ts::AbstractVector, dim::Integer, α::Real, w::Integer = length(ts)-1,  logBase::Real = 10)
+function errCovNonAlloc(ts::AbstractVector, dim::Integer, α::Real, w::Integer = length(ts)-1,  logBase::Real = 10)
 
     ln = length(ts)
     S = float(eltype(ts))
@@ -511,7 +529,34 @@ function errCov(ts::AbstractVector, dim::Integer, α::Real, w::Integer = length(
     return Symmetric(errCov), Symmetric(logErrCov)
 end
 
-function crossCov(ts::AbstractVector, dim::Integer, α::Real, w::Integer = length(ts)-1)
+"""
+Covariance matrix of errors of TA-MSD and log TA-MSD. Data is assumed to come from FBM, D = 1. Labels ts correspond to the original trajectory.
+"""
+function errCov(ts::AbstractRange, dim::Integer, α::Real, w::Integer = length(ts)-1,  logBase::Real = 10)
+
+    ln = length(ts)
+    S = float(eltype(ts))
+    errCov = Matrix{S}(undef, w, w)
+    logErrCov = Matrix{S}(undef, w, w)
+
+    K(s,t) = (α ≈ 1.0) ? 2min(s,t) : (s^α + t^α - abs(s-t)^α)
+    cFBM = Matrix{S}(undef, ln, ln)
+    for i in 1:ln, j in i:ln # tabularises cov matrix of the FBM trajectory
+        cFBM[i,j] = K(ts[i],ts[j])
+    end
+    cFBM = Symmetric(cFBM)
+
+    for i in 1:w, j in i:w
+        c = theorCovEff(i,j,ln,cFBM)
+        errCov[i,j] = dim*c
+        logErrCov[i,j] = c / ( dim * cFBM[i,i] * cFBM[j,j] * log(logBase)^2 ) 
+    end
+
+    return Symmetric(errCov), Symmetric(logErrCov)
+end
+
+
+function crossCovNonAlloc(ts::AbstractVector, dim::Integer, α::Real, w::Integer = length(ts)-1)
 
     function crossCovEffFBM(ts, k, l, ln, α)
         K(s,t) = (α ≈ 1.0) ? 2min(s,t) : (s^α + t^α - abs(s-t)^α) 
@@ -538,6 +583,34 @@ function crossCov(ts::AbstractVector, dim::Integer, α::Real, w::Integer = lengt
     return Symmetric(cov)
 end
 
+function crossCov(ts::AbstractRange, dim::Integer, α::Real, w::Integer = length(ts)-1)
+    ln = length(ts)
+    S = float(eltype(ts))
+    cov = Matrix{S}(undef, w, w)
+    K(s,t) = (α ≈ 1.0) ? 2min(s,t) : (s^α + t^α - abs(s-t)^α)
+    cFBM = Matrix{S}(undef, ln, ln)
+    for i in 1:ln, j in i:ln # tabularise cov matrix of the FBM trajectory
+        cFBM[i,j] = K(ts[i],ts[j])
+    end
+    cFBM = Symmetric(cFBM)
+
+    for k in 1:w, l in k:w
+        S1 = 0.
+        @simd for h in 2:ln-l
+            S1 += (ln-l-h+1) * incrCov(1,h,k,l,cFBM)*(==(1,h) + ==(1+k,h+l) - ==(1,h+l) - ==(1+k,h))
+        end
+        S2 = 0.
+        @simd for h in 1:ln-k 
+            S2 += ((h <= l-k+1) ? ( ln-l ) : ( ln-k-h+1 )) * incrCov(h,1,k,l,cFBM)*(==(h,1) + ==(h+k,1+l) - ==(h,1+l) - ==(h+k,1))
+        end
+        c = 4/((ln-k)*(ln-l)) * (S1 + S2)
+        cov[k,l] = dim*c
+    end
+
+    return Symmetric(cov)
+end
+
+
 """
 Covariance of 1D iid noise TA-MSD
 """
@@ -551,7 +624,6 @@ function noiseCov(ln,k,l)
         return 4/((ln-k)*(ln-l)) * ( (ln >= k+l) ? ( 2ln-k-2l) : (ln-l) )
     end
 end
-
 
 
 end
